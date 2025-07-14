@@ -42,7 +42,7 @@ module.exports = {
             if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({
                     content: '❌ An error occurred during setup.',
-                    flags: 64
+                    ephemeral: true
                 });
             }
         }

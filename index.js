@@ -1,10 +1,11 @@
-const { Client, GatewayIntentBits, Collection, ActivityType } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, ActivityType, Partials } = require('discord.js');
 const { readdirSync } = require('fs');
 const { join } = require('path');
 const mongoose = require('mongoose');
+const logger = require('./utils/logger');
 require('dotenv').config();
 
-// Initialize Discord client with necessary intents
+// Initialize Discord client with necessary intents and partials
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -13,7 +14,16 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessageReactions,
         GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildPresences
+        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.DirectMessageReactions
+    ],
+    partials: [
+        Partials.Message,
+        Partials.Channel,
+        Partials.Reaction,
+        Partials.User,
+        Partials.GuildMember
     ]
 });
 
@@ -37,16 +47,31 @@ for (const folder of commandFolders) {
                 
                 if ('data' in command && 'execute' in command) {
                     client.commands.set(command.data.name, command);
-                    console.log(`✅ Loaded command: ${command.data.name}`);
+                    logger.info(`Loaded command: ${command.data.name}`, { 
+                        category: 'startup', 
+                        command: command.data.name,
+                        folder: folder 
+                    });
                 } else {
-                    console.log(`⚠️  Command at ${filePath} is missing required "data" or "execute" property.`);
+                    logger.warn(`Command at ${filePath} is missing required "data" or "execute" property`, {
+                        category: 'startup',
+                        file: filePath
+                    });
                 }
             } catch (error) {
-                console.error(`❌ Failed to load command ${file}:`, error.message);
+                logger.logError(error, {
+                    category: 'startup',
+                    context: `Failed to load command ${file}`,
+                    file: filePath
+                });
             }
         }
     } catch (error) {
-        console.error(`❌ Failed to read command folder ${folder}:`, error.message);
+        logger.logError(error, {
+            category: 'startup',
+            context: `Failed to read command folder ${folder}`,
+            folder: folder
+        });
     }
 }
 
@@ -63,25 +88,38 @@ for (const file of eventFiles) {
     } else {
         client.on(event.name, (...args) => event.execute(...args));
     }
-    console.log(`✅ Loaded event: ${event.name}`);
+    logger.info(`Loaded event: ${event.name}`, {
+        category: 'startup',
+        event: event.name,
+        once: event.once || false
+    });
 }
 
 // Connect to MongoDB
+logger.info('Connecting to MongoDB...', { category: 'database' });
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/malluclub')
 .then(() => {
-    console.log('✅ Connected to MongoDB');
+    logger.database('Connected to MongoDB successfully');
 }).catch(err => {
-    console.error('❌ MongoDB connection error:', err);
+    logger.logError(err, {
+        category: 'database',
+        context: 'MongoDB connection failed'
+    });
 });
 
 // Global error handling
 process.on('unhandledRejection', error => {
-    console.error('🚨 Unhandled promise rejection:', error);
-    // Log to file in production
+    logger.logError(error, {
+        category: 'system',
+        context: 'Unhandled promise rejection'
+    });
 });
 
 process.on('uncaughtException', error => {
-    console.error('🚨 Uncaught exception:', error);
+    logger.logError(error, {
+        category: 'system',
+        context: 'Uncaught exception - shutting down'
+    });
     // Graceful shutdown
     client.destroy();
     process.exit(1);
@@ -89,21 +127,28 @@ process.on('uncaughtException', error => {
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-    console.log('🛑 Received SIGINT. Graceful shutdown...');
+    logger.shutdown();
+    logger.info('Received SIGINT - graceful shutdown initiated', { category: 'system' });
     client.destroy();
     mongoose.connection.close();
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-    console.log('🛑 Received SIGTERM. Graceful shutdown...');
+    logger.shutdown();
+    logger.info('Received SIGTERM - graceful shutdown initiated', { category: 'system' });
     client.destroy();
     mongoose.connection.close();
     process.exit(0);
 });
 
 // Login to Discord
+logger.startup();
+logger.info('Attempting to login to Discord...', { category: 'startup' });
 client.login(process.env.DISCORD_TOKEN).catch(error => {
-    console.error('❌ Failed to login to Discord:', error);
+    logger.logError(error, {
+        category: 'startup',
+        context: 'Failed to login to Discord'
+    });
     process.exit(1);
 });

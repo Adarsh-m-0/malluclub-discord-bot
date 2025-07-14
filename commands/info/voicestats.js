@@ -170,7 +170,7 @@ module.exports = {
             console.error('Voice stats error:', error);
             await interaction.reply({
                 content: '❌ Error fetching voice statistics. Please try again later.',
-                flags: 64
+                ephemeral: true
             });
         }
     },

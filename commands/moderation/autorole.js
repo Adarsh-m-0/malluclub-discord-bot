@@ -57,7 +57,7 @@ async function handleSetAutoRole(interaction) {
     if (role.position >= interaction.guild.members.me.roles.highest.position) {
         return interaction.reply({
             content: '❌ I cannot assign this role as it is higher than or equal to my highest role.',
-            flags: 64
+            ephemeral: true
         });
     }
     
@@ -65,7 +65,7 @@ async function handleSetAutoRole(interaction) {
     if (role.id === interaction.guild.id) {
         return interaction.reply({
             content: '❌ Cannot set @everyone as auto-role.',
-            flags: 64
+            ephemeral: true
         });
     }
     
@@ -92,7 +92,7 @@ async function handleSetAutoRole(interaction) {
         console.error('Error setting auto-role:', error);
         await interaction.reply({
             content: '❌ An error occurred while setting the auto-role.',
-            flags: 64
+            ephemeral: true
         });
     }
 }
@@ -101,7 +101,7 @@ async function handleRemoveAutoRole(interaction) {
     if (!process.env.AUTO_ROLE_ID) {
         return interaction.reply({
             content: '❌ No auto-role is currently set.',
-            flags: 64
+            ephemeral: true
         });
     }
     
@@ -148,7 +148,7 @@ async function handleStatusAutoRole(interaction) {
         process.env.AUTO_ROLE_ID = ''; // Clear invalid role
         return interaction.reply({
             content: '⚠️ Auto-role was set but the role no longer exists. Auto-role has been disabled.',
-            flags: 64
+            ephemeral: true
         });
     }
     
@@ -178,7 +178,7 @@ async function handleApplyRole(interaction) {
     if (role.position >= interaction.guild.members.me.roles.highest.position) {
         return interaction.reply({
             content: '❌ I cannot assign this role as it is higher than or equal to my highest role.',
-            flags: 64
+            ephemeral: true
         });
     }
     

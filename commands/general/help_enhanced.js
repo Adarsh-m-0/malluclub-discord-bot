@@ -22,7 +22,7 @@ module.exports = {
                     `Command \`${commandName}\` was not found. Use \`/help\` to see available commands.`,
                     interaction.user
                 );
-                return interaction.reply({ embeds: [errorEmbed], flags: 64 });
+                return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
             }
             
             // Enhanced individual command help

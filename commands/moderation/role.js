@@ -111,7 +111,7 @@ module.exports = {
             if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply({
                     content: '❌ An error occurred while executing the role command.',
-                    flags: 64
+                    ephemeral: true
                 });
             }
         }
@@ -129,7 +129,7 @@ async function handleCreateRole(interaction) {
     if (!colorRegex.test(color)) {
         return interaction.reply({
             content: '❌ Invalid color format. Please use hex format like #FF0000',
-            flags: 64
+            ephemeral: true
         });
     }
 
@@ -162,7 +162,7 @@ async function handleCreateRole(interaction) {
         console.error('Error creating role:', error);
         await interaction.reply({
             content: '❌ Failed to create role. Check my permissions and try again.',
-            flags: 64
+            ephemeral: true
         });
     }
 }
@@ -174,21 +174,21 @@ async function handleDeleteRole(interaction) {
     if (role.id === interaction.guild.id) {
         return interaction.reply({
             content: '❌ Cannot delete the @everyone role.',
-            flags: 64
+            ephemeral: true
         });
     }
 
     if (role.managed) {
         return interaction.reply({
             content: '❌ Cannot delete managed roles (bot roles, boost roles, etc.).',
-            flags: 64
+            ephemeral: true
         });
     }
 
     if (role.position >= interaction.guild.members.me.roles.highest.position) {
         return interaction.reply({
             content: '❌ Cannot delete roles higher than or equal to my highest role.',
-            flags: 64
+            ephemeral: true
         });
     }
 
@@ -214,7 +214,7 @@ async function handleDeleteRole(interaction) {
         console.error('Error deleting role:', error);
         await interaction.reply({
             content: '❌ Failed to delete role. Check my permissions and try again.',
-            flags: 64
+            ephemeral: true
         });
     }
 }
@@ -227,21 +227,21 @@ async function handleAddRole(interaction) {
     if (!member) {
         return interaction.reply({
             content: '❌ User not found in this server.',
-            flags: 64
+            ephemeral: true
         });
     }
 
     if (member.roles.cache.has(role.id)) {
         return interaction.reply({
             content: `❌ ${user.username} already has the ${role.name} role.`,
-            flags: 64
+            ephemeral: true
         });
     }
 
     if (role.position >= interaction.guild.members.me.roles.highest.position) {
         return interaction.reply({
             content: '❌ Cannot assign roles higher than or equal to my highest role.',
-            flags: 64
+            ephemeral: true
         });
     }
 
@@ -268,7 +268,7 @@ async function handleAddRole(interaction) {
         console.error('Error adding role:', error);
         await interaction.reply({
             content: '❌ Failed to add role. Check my permissions and try again.',
-            flags: 64
+            ephemeral: true
         });
     }
 }
@@ -281,21 +281,21 @@ async function handleRemoveRole(interaction) {
     if (!member) {
         return interaction.reply({
             content: '❌ User not found in this server.',
-            flags: 64
+            ephemeral: true
         });
     }
 
     if (!member.roles.cache.has(role.id)) {
         return interaction.reply({
             content: `❌ ${user.username} doesn't have the ${role.name} role.`,
-            flags: 64
+            ephemeral: true
         });
     }
 
     if (role.position >= interaction.guild.members.me.roles.highest.position) {
         return interaction.reply({
             content: '❌ Cannot manage roles higher than or equal to my highest role.',
-            flags: 64
+            ephemeral: true
         });
     }
 
@@ -322,7 +322,7 @@ async function handleRemoveRole(interaction) {
         console.error('Error removing role:', error);
         await interaction.reply({
             content: '❌ Failed to remove role. Check my permissions and try again.',
-            flags: 64
+            ephemeral: true
         });
     }
 }
@@ -378,7 +378,7 @@ async function handleRoleMembers(interaction) {
     if (role.members.size === 0) {
         return interaction.reply({
             content: `❌ No members have the ${role.name} role.`,
-            flags: 64
+            ephemeral: true
         });
     }
 

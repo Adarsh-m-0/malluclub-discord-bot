@@ -76,7 +76,7 @@ module.exports = {
             console.error('Voice admin error:', error);
             await interaction.reply({
                 content: '❌ An error occurred while executing the admin command.',
-                flags: 64
+                ephemeral: true
             });
         }
     },
@@ -93,7 +93,7 @@ async function handleReset(interaction) {
     if (!userStats) {
         return interaction.reply({
             content: `❌ ${targetUser.username} has no voice activity data to reset.`,
-            flags: 64
+            ephemeral: true
         });
     }
 
@@ -192,7 +192,7 @@ async function handleRemoveXP(interaction) {
     if (!userStats) {
         return interaction.reply({
             content: `❌ ${targetUser.username} has no voice activity data.`,
-            flags: 64
+            ephemeral: true
         });
     }
 
@@ -227,7 +227,7 @@ async function handleServerStats(interaction) {
     if (allUsers.length === 0) {
         return interaction.reply({
             content: '📊 No voice activity data found for this server.',
-            flags: 64
+            ephemeral: true
         });
     }
 
@@ -298,7 +298,7 @@ async function handleServerStats(interaction) {
 }
 
 async function handleExport(interaction) {
-    await interaction.deferReply({ flags: 64 });
+    await interaction.deferReply({ ephemeral: true });
 
     const allUsers = await VoiceActivity.find({ guildId: interaction.guild.id });
 

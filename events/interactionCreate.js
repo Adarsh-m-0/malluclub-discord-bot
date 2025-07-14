@@ -1,4 +1,5 @@
 const { Events, Collection } = require('discord.js');
+const logger = require('../utils/logger');
 
 module.exports = {
     name: Events.InteractionCreate,
@@ -8,7 +9,12 @@ module.exports = {
             const command = interaction.client.commands.get(interaction.commandName);
 
             if (!command) {
-                console.error(`No command matching ${interaction.commandName} was found.`);
+                logger.warn(`No command matching ${interaction.commandName} was found`, {
+                    category: 'command',
+                    command: interaction.commandName,
+                    user: `${interaction.user.tag} (${interaction.user.id})`,
+                    guild: interaction.guild ? `${interaction.guild.name} (${interaction.guild.id})` : 'DM'
+                });
                 return;
             }
 
@@ -30,7 +36,7 @@ module.exports = {
                     const expiredTimestamp = Math.round(expirationTime / 1000);
                     return interaction.reply({
                         content: `Please wait, you are on a cooldown for \`${command.data.name}\`. You can use it again <t:${expiredTimestamp}:R>.`,
-                        flags: 64 // MessageFlags.Ephemeral
+                        ephemeral: true
                     });
                 }
             }
@@ -42,24 +48,54 @@ module.exports = {
             if (!interaction.guild) {
                 return interaction.reply({
                     content: '❌ This command can only be used in a server!',
-                    flags: 64 // MessageFlags.Ephemeral
+                    ephemeral: true
                 });
             }
 
             try {
+                const startTime = Date.now();
                 await command.execute(interaction);
+                const duration = Date.now() - startTime;
+                
+                logger.command(interaction.commandName, interaction.user, interaction.guild, {
+                    duration: duration,
+                    channelId: interaction.channelId,
+                    channelName: interaction.channel?.name
+                });
+                
+                if (duration > 3000) {
+                    logger.performance('Command execution', duration, {
+                        command: interaction.commandName,
+                        user: interaction.user.id
+                    });
+                }
             } catch (error) {
-                console.error(`Error executing ${interaction.commandName}:`, error);
+                logger.logError(error, {
+                    context: `Error executing command: ${interaction.commandName}`,
+                    command: interaction.commandName,
+                    user: `${interaction.user.tag} (${interaction.user.id})`,
+                    guild: interaction.guild ? `${interaction.guild.name} (${interaction.guild.id})` : 'DM',
+                    channelId: interaction.channelId
+                });
                 
                 const errorMessage = {
-                    content: '❌ There was an error while executing this command!',
-                    flags: 64 // MessageFlags.Ephemeral
+                    content: '❌ Something went wrong, the devs have been notified.',
+                    ephemeral: true
                 };
 
-                if (interaction.replied || interaction.deferred) {
-                    await interaction.followUp(errorMessage);
-                } else {
-                    await interaction.reply(errorMessage);
+                try {
+                    if (interaction.replied || interaction.deferred) {
+                        await interaction.followUp(errorMessage);
+                    } else {
+                        await interaction.reply(errorMessage);
+                    }
+                } catch (replyError) {
+                    logger.logError(replyError, {
+                        context: 'Failed to send error message to user',
+                        originalError: error.message,
+                        command: interaction.commandName,
+                        user: interaction.user.id
+                    });
                 }
             }
         }

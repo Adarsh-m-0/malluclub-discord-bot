@@ -1,6 +1,7 @@
 const { REST, Routes } = require('discord.js');
 const { readdirSync } = require('fs');
 const { join } = require('path');
+const logger = require('./utils/logger');
 require('dotenv').config();
 
 const commands = [];
@@ -14,12 +15,20 @@ for (const folder of commandFolders) {
     
     for (const file of commandFiles) {
         const filePath = join(folderPath, file);
-        const command = require(filePath);
-        
-        if ('data' in command && 'execute' in command) {
-            commands.push(command.data.toJSON());
-        } else {
-            console.log(`⚠️  Command at ${filePath} is missing required "data" or "execute" property.`);
+        try {
+            const command = require(filePath);
+            
+            if ('data' in command && 'execute' in command) {
+                commands.push(command.data.toJSON());
+                logger.info(`✅ Loaded command: ${command.data.name}`);
+            } else {
+                logger.warn(`⚠️  Command at ${filePath} is missing required "data" or "execute" property.`);
+            }
+        } catch (error) {
+            logger.logError(error, {
+                context: `Failed to load command file: ${file}`,
+                filePath: filePath
+            });
         }
     }
 }
@@ -29,21 +38,21 @@ const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 // Deploy commands
 (async () => {
     try {
-        console.log(`Started refreshing ${commands.length} application (/) commands.`);
-
-        // Choose between guild-specific or global commands
-        const data = process.env.GUILD_ID 
-            ? await rest.put(
-                Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-                { body: commands }
-            )
-            : await rest.put(
-                Routes.applicationCommands(process.env.CLIENT_ID),
-                { body: commands }
-            );
-
-        console.log(`✅ Successfully reloaded ${data.length} application (/) commands.`);
+        logger.info(`Started refreshing ${commands.length} application (/) commands.`);
+        
+        // Deploy globally for production, per-guild for development
+        const route = process.env.NODE_ENV === 'production' 
+            ? Routes.applicationCommands(process.env.CLIENT_ID)
+            : Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID);
+        
+        const data = await rest.put(route, { body: commands });
+        
+        logger.info(`✅ Successfully reloaded ${data.length} application (/) commands${process.env.NODE_ENV === 'production' ? ' globally' : ' for development guild'}.`);
     } catch (error) {
-        console.error('❌ Error deploying commands:', error);
+        logger.logError(error, {
+            context: 'Failed to deploy slash commands',
+            commandCount: commands.length
+        });
+        process.exit(1);
     }
 })();

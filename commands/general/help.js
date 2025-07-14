@@ -17,7 +17,7 @@ module.exports = {
             if (!command) {
                 return interaction.reply({ 
                     content: `❌ Command \`${commandName}\` not found.`, 
-                    flags: 64 
+                    ephemeral: true
                 });
             }
             
