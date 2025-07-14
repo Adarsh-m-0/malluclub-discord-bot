@@ -1,0 +1,197 @@
+const { SlashCommandBuilder } = require('discord.js');
+const VoiceActivity = require('../../models/VoiceActivity');
+const { EmbedTemplates, Colors } = require('../../utils/EmbedTemplates');
+const { EmbedUtils } = require('../../utils/EmbedUtils');
+
+module.exports = {
+    data: new SlashCommandBuilder()
+        .setName('voicestats')
+        .setDescription('View detailed voice activity statistics')
+        .addUserOption(option =>
+            option.setName('user')
+                .setDescription('User to check stats for (default: yourself)')
+                .setRequired(false)),
+
+    async execute(interaction) {
+        const targetUser = interaction.options.getUser('user') || interaction.user;
+        
+        // Show loading state
+        const loadingEmbed = EmbedUtils.createLoading(
+            'Loading Voice Stats',
+            `📊 Fetching voice activity data for ${targetUser.username}...`
+        );
+        await interaction.reply({ embeds: [loadingEmbed] });
+        
+        try {
+            const userStats = await VoiceActivity.findOne({
+                userId: targetUser.id,
+                guildId: interaction.guild.id
+            });
+
+            if (!userStats) {
+                const noDataEmbed = EmbedTemplates.info(
+                    'No Voice Activity',
+                    targetUser.id === interaction.user.id 
+                        ? '📊 You haven\'t joined any voice channels yet! Join one to start earning XP.'
+                        : `📊 ${targetUser.username} hasn't joined any voice channels yet.`,
+                    interaction.guild
+                );
+                return interaction.editReply({ embeds: [noDataEmbed] });
+            }
+
+            // Get user's rank
+            const rank = await VoiceActivity.countDocuments({
+                guildId: interaction.guild.id,
+                voiceXP: { $gt: userStats.voiceXP }
+            }) + 1;
+
+            // Calculate next level info
+            const nextLevelXP = VoiceActivity.getXPForNextLevel(userStats.level);
+            const currentLevelXP = userStats.level > 1 ? VoiceActivity.getXPForNextLevel(userStats.level - 1) : 0;
+            const progress = userStats.voiceXP - currentLevelXP;
+            const needed = nextLevelXP - currentLevelXP;
+            const percentage = Math.round((progress / needed) * 100);
+
+            // Calculate average session time
+            const avgSessionTime = userStats.sessions.length > 0 
+                ? userStats.totalVoiceTime / userStats.sessions.length 
+                : 0;
+
+            // Get most active channel
+            const channelCounts = {};
+            userStats.sessions.forEach(session => {
+                channelCounts[session.channelName] = (channelCounts[session.channelName] || 0) + 1;
+            });
+            const mostActiveChannel = Object.keys(channelCounts).reduce((a, b) => 
+                channelCounts[a] > channelCounts[b] ? a : b, 'None');
+
+            // Recent activity (last 7 days)
+            const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            const recentSessions = userStats.sessions.filter(session => 
+                new Date(session.joinTime) > weekAgo
+            );
+            const recentTime = recentSessions.reduce((total, session) => total + session.duration, 0);
+
+            const embed = new EmbedBuilder()
+                .setColor(0x5865F2)
+                .setAuthor({
+                    name: `${targetUser.username}'s Voice Stats`,
+                    iconURL: targetUser.displayAvatarURL()
+                })
+                .setThumbnail(targetUser.displayAvatarURL())
+                .addFields(
+                    {
+                        name: '🏆 Ranking',
+                        value: [
+                            `**Server Rank:** #${rank}`,
+                            `**Level:** ${userStats.level}`,
+                            `**Total XP:** ${userStats.voiceXP.toLocaleString()}`
+                        ].join('\n'),
+                        inline: true
+                    },
+                    {
+                        name: '⏱️ Time Stats',
+                        value: [
+                            `**Total Time:** ${formatTime(userStats.totalVoiceTime)}`,
+                            `**Sessions:** ${userStats.sessions.length}`,
+                            `**Avg Session:** ${formatTime(avgSessionTime)}`
+                        ].join('\n'),
+                        inline: true
+                    },
+                    {
+                        name: '🔥 Activity',
+                        value: [
+                            `**Current Streak:** ${userStats.dailyStats.streak} days`,
+                            `**Today's Time:** ${formatTime(userStats.dailyStats.todayVoiceTime)}`,
+                            `**This Week:** ${formatTime(recentTime)}`
+                        ].join('\n'),
+                        inline: true
+                    },
+                    {
+                        name: '🎯 Level Progress',
+                        value: [
+                            `**Next Level:** ${userStats.level + 1}`,
+                            `**Progress:** ${progress}/${needed} XP (${percentage}%)`,
+                            `**XP Needed:** ${nextLevelXP - userStats.voiceXP}`,
+                            createProgressBar(percentage)
+                        ].join('\n'),
+                        inline: false
+                    },
+                    {
+                        name: '📊 Preferences',
+                        value: [
+                            `**Favorite Channel:** ${mostActiveChannel}`,
+                            `**Last Active:** ${userStats.lastXPUpdate ? `<t:${Math.floor(userStats.lastXPUpdate.getTime() / 1000)}:R>` : 'Never'}`,
+                            `**Member Since:** <t:${Math.floor(userStats.createdAt.getTime() / 1000)}:D>`
+                        ].join('\n'),
+                        inline: false
+                    }
+                );
+
+            // Add achievements if any
+            if (userStats.achievements.length > 0) {
+                const achievementsList = userStats.achievements
+                    .slice(-5) // Show last 5 achievements
+                    .map(achievement => `🏆 **${achievement.name}** - ${achievement.description}`)
+                    .join('\n');
+
+                embed.addFields({
+                    name: `🎖️ Recent Achievements (${userStats.achievements.length} total)`,
+                    value: achievementsList,
+                    inline: false
+                });
+            }
+
+            // Add current session info if user is in voice
+            if (userStats.currentSession.isActive) {
+                const sessionDuration = Date.now() - userStats.currentSession.joinTime.getTime();
+                const channel = interaction.guild.channels.cache.get(userStats.currentSession.channelId);
+                
+                embed.addFields({
+                    name: '🎤 Current Session',
+                    value: [
+                        `**Channel:** ${channel ? channel.name : 'Unknown'}`,
+                        `**Duration:** ${formatTime(sessionDuration)}`,
+                        `**XP Earning:** ${VoiceActivity.calculateXP(sessionDuration)} XP`
+                    ].join('\n'),
+                    inline: true
+                });
+            }
+
+            embed.setFooter({
+                text: `Requested by ${interaction.user.tag} • Voice XP System`,
+                iconURL: interaction.user.displayAvatarURL()
+            })
+            .setTimestamp();
+
+            await interaction.reply({ embeds: [embed] });
+
+        } catch (error) {
+            console.error('Voice stats error:', error);
+            await interaction.reply({
+                content: '❌ Error fetching voice statistics. Please try again later.',
+                flags: 64
+            });
+        }
+    },
+};
+
+function formatTime(milliseconds) {
+    const hours = Math.floor(milliseconds / (1000 * 60 * 60));
+    const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (hours > 24) {
+        const days = Math.floor(hours / 24);
+        const remainingHours = hours % 24;
+        return `${days}d ${remainingHours}h ${minutes}m`;
+    } else if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+}
+
+function createProgressBar(percentage, length = 10) {
+    const filled = Math.round((percentage / 100) * length);
+    const empty = length - filled;
+    return `[${'█'.repeat(filled)}${'░'.repeat(empty)}] ${percentage}%`;
+}

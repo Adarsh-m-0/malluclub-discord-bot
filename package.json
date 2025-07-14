@@ -1,0 +1,28 @@
+{
+  "name": "mallu-club-bot",
+  "version": "2.0.0",
+  "description": "A comprehensive Discord bot for the MalluClub server with advanced moderation, entertainment features, and community management tools",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "deploy": "node deploy-commands.js",
+    "test": "node test-bot.js",
+    "quick-start": "./quick-start.bat"
+  },
+  "keywords": ["discord", "bot", "malluclub", "moderation", "entertainment", "community"],
+  "author": "MalluClub",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "mongoose": "^8.0.3",
+    "axios": "^1.6.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

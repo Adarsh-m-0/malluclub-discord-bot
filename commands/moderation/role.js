@@ -1,0 +1,467 @@
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const UserRoles = require('../../models/UserRoles');
+
+module.exports = {
+    data: new SlashCommandBuilder()
+        .setName('role')
+        .setDescription('Manage server roles')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('create')
+                .setDescription('Create a new role')
+                .addStringOption(option =>
+                    option.setName('name')
+                        .setDescription('Name of the role')
+                        .setRequired(true))
+                .addStringOption(option =>
+                    option.setName('color')
+                        .setDescription('Hex color code (e.g., #FF0000)')
+                        .setRequired(false))
+                .addBooleanOption(option =>
+                    option.setName('mentionable')
+                        .setDescription('Whether the role can be mentioned')
+                        .setRequired(false))
+                .addBooleanOption(option =>
+                    option.setName('hoist')
+                        .setDescription('Whether to display role separately in member list')
+                        .setRequired(false)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('delete')
+                .setDescription('Delete a role')
+                .addRoleOption(option =>
+                    option.setName('role')
+                        .setDescription('Role to delete')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('add')
+                .setDescription('Add a role to a member')
+                .addUserOption(option =>
+                    option.setName('user')
+                        .setDescription('User to add role to')
+                        .setRequired(true))
+                .addRoleOption(option =>
+                    option.setName('role')
+                        .setDescription('Role to add')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('remove')
+                .setDescription('Remove a role from a member')
+                .addUserOption(option =>
+                    option.setName('user')
+                        .setDescription('User to remove role from')
+                        .setRequired(true))
+                .addRoleOption(option =>
+                    option.setName('role')
+                        .setDescription('Role to remove')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('info')
+                .setDescription('Get information about a role')
+                .addRoleOption(option =>
+                    option.setName('role')
+                        .setDescription('Role to get information about')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('list')
+                .setDescription('List all roles in the server'))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('members')
+                .setDescription('List members with a specific role')
+                .addRoleOption(option =>
+                    option.setName('role')
+                        .setDescription('Role to check members for')
+                        .setRequired(true)))
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+
+    async execute(interaction) {
+        const subcommand = interaction.options.getSubcommand();
+
+        try {
+            switch (subcommand) {
+                case 'create':
+                    await handleCreateRole(interaction);
+                    break;
+                case 'delete':
+                    await handleDeleteRole(interaction);
+                    break;
+                case 'add':
+                    await handleAddRole(interaction);
+                    break;
+                case 'remove':
+                    await handleRemoveRole(interaction);
+                    break;
+                case 'info':
+                    await handleRoleInfo(interaction);
+                    break;
+                case 'list':
+                    await handleListRoles(interaction);
+                    break;
+                case 'members':
+                    await handleRoleMembers(interaction);
+                    break;
+            }
+        } catch (error) {
+            console.error('Role command error:', error);
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                    content: '❌ An error occurred while executing the role command.',
+                    flags: 64
+                });
+            }
+        }
+    },
+};
+
+async function handleCreateRole(interaction) {
+    const name = interaction.options.getString('name');
+    const color = interaction.options.getString('color') || '#99AAB5';
+    const mentionable = interaction.options.getBoolean('mentionable') ?? false;
+    const hoist = interaction.options.getBoolean('hoist') ?? false;
+
+    // Validate color format
+    const colorRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
+    if (!colorRegex.test(color)) {
+        return interaction.reply({
+            content: '❌ Invalid color format. Please use hex format like #FF0000',
+            flags: 64
+        });
+    }
+
+    try {
+        const role = await interaction.guild.roles.create({
+            name: name,
+            color: color,
+            mentionable: mentionable,
+            hoist: hoist,
+            reason: `Role created by ${interaction.user.tag}`
+        });
+
+        const embed = new EmbedBuilder()
+            .setColor(role.color)
+            .setTitle('✅ Role Created')
+            .setDescription(`Successfully created role ${role}`)
+            .addFields(
+                { name: 'Name', value: role.name, inline: true },
+                { name: 'ID', value: role.id, inline: true },
+                { name: 'Color', value: role.hexColor, inline: true },
+                { name: 'Mentionable', value: role.mentionable ? 'Yes' : 'No', inline: true },
+                { name: 'Hoisted', value: role.hoist ? 'Yes' : 'No', inline: true },
+                { name: 'Position', value: role.position.toString(), inline: true }
+            )
+            .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+        console.error('Error creating role:', error);
+        await interaction.reply({
+            content: '❌ Failed to create role. Check my permissions and try again.',
+            flags: 64
+        });
+    }
+}
+
+async function handleDeleteRole(interaction) {
+    const role = interaction.options.getRole('role');
+
+    // Safety checks
+    if (role.id === interaction.guild.id) {
+        return interaction.reply({
+            content: '❌ Cannot delete the @everyone role.',
+            flags: 64
+        });
+    }
+
+    if (role.managed) {
+        return interaction.reply({
+            content: '❌ Cannot delete managed roles (bot roles, boost roles, etc.).',
+            flags: 64
+        });
+    }
+
+    if (role.position >= interaction.guild.members.me.roles.highest.position) {
+        return interaction.reply({
+            content: '❌ Cannot delete roles higher than or equal to my highest role.',
+            flags: 64
+        });
+    }
+
+    const memberCount = role.members.size;
+
+    try {
+        const roleName = role.name;
+        await role.delete(`Role deleted by ${interaction.user.tag}`);
+
+        const embed = new EmbedBuilder()
+            .setColor(0xFF6B6B)
+            .setTitle('🗑️ Role Deleted')
+            .setDescription(`Successfully deleted role **${roleName}**`)
+            .addFields(
+                { name: 'Members Affected', value: memberCount.toString(), inline: true },
+                { name: 'Deleted by', value: interaction.user.tag, inline: true }
+            )
+            .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+        console.error('Error deleting role:', error);
+        await interaction.reply({
+            content: '❌ Failed to delete role. Check my permissions and try again.',
+            flags: 64
+        });
+    }
+}
+
+async function handleAddRole(interaction) {
+    const user = interaction.options.getUser('user');
+    const role = interaction.options.getRole('role');
+    const member = await interaction.guild.members.fetch(user.id);
+
+    if (!member) {
+        return interaction.reply({
+            content: '❌ User not found in this server.',
+            flags: 64
+        });
+    }
+
+    if (member.roles.cache.has(role.id)) {
+        return interaction.reply({
+            content: `❌ ${user.username} already has the ${role.name} role.`,
+            flags: 64
+        });
+    }
+
+    if (role.position >= interaction.guild.members.me.roles.highest.position) {
+        return interaction.reply({
+            content: '❌ Cannot assign roles higher than or equal to my highest role.',
+            flags: 64
+        });
+    }
+
+    try {
+        await member.roles.add(role, `Role added by ${interaction.user.tag}`);
+
+        // Save role assignment to database
+        await saveRoleAssignment(member, role, interaction.user.tag);
+
+        const embed = new EmbedBuilder()
+            .setColor(0x00FF00)
+            .setTitle('✅ Role Added')
+            .setDescription(`Successfully added ${role} to ${user}`)
+            .addFields(
+                { name: 'User', value: `${user.tag}`, inline: true },
+                { name: 'Role', value: role.name, inline: true },
+                { name: 'Added by', value: interaction.user.tag, inline: true }
+            )
+            .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+        console.error('Error adding role:', error);
+        await interaction.reply({
+            content: '❌ Failed to add role. Check my permissions and try again.',
+            flags: 64
+        });
+    }
+}
+
+async function handleRemoveRole(interaction) {
+    const user = interaction.options.getUser('user');
+    const role = interaction.options.getRole('role');
+    const member = await interaction.guild.members.fetch(user.id);
+
+    if (!member) {
+        return interaction.reply({
+            content: '❌ User not found in this server.',
+            flags: 64
+        });
+    }
+
+    if (!member.roles.cache.has(role.id)) {
+        return interaction.reply({
+            content: `❌ ${user.username} doesn't have the ${role.name} role.`,
+            flags: 64
+        });
+    }
+
+    if (role.position >= interaction.guild.members.me.roles.highest.position) {
+        return interaction.reply({
+            content: '❌ Cannot manage roles higher than or equal to my highest role.',
+            flags: 64
+        });
+    }
+
+    try {
+        await member.roles.remove(role, `Role removed by ${interaction.user.tag}`);
+
+        // Remove role from database
+        await removeRoleAssignment(member, role);
+
+        const embed = new EmbedBuilder()
+            .setColor(0xFF6B6B)
+            .setTitle('➖ Role Removed')
+            .setDescription(`Successfully removed ${role} from ${user}`)
+            .addFields(
+                { name: 'User', value: `${user.tag}`, inline: true },
+                { name: 'Role', value: role.name, inline: true },
+                { name: 'Removed by', value: interaction.user.tag, inline: true }
+            )
+            .setTimestamp();
+
+        await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+        console.error('Error removing role:', error);
+        await interaction.reply({
+            content: '❌ Failed to remove role. Check my permissions and try again.',
+            flags: 64
+        });
+    }
+}
+
+async function handleRoleInfo(interaction) {
+    const role = interaction.options.getRole('role');
+
+    const permissions = role.permissions.toArray();
+    const permissionsList = permissions.length > 0 
+        ? permissions.slice(0, 10).join(', ') + (permissions.length > 10 ? '...' : '')
+        : 'None';
+
+    const embed = new EmbedBuilder()
+        .setColor(role.color)
+        .setTitle(`📋 Role Information: ${role.name}`)
+        .addFields(
+            { name: 'Name', value: role.name, inline: true },
+            { name: 'ID', value: role.id, inline: true },
+            { name: 'Color', value: role.hexColor, inline: true },
+            { name: 'Position', value: role.position.toString(), inline: true },
+            { name: 'Members', value: role.members.size.toString(), inline: true },
+            { name: 'Mentionable', value: role.mentionable ? 'Yes' : 'No', inline: true },
+            { name: 'Hoisted', value: role.hoist ? 'Yes' : 'No', inline: true },
+            { name: 'Managed', value: role.managed ? 'Yes' : 'No', inline: true },
+            { name: 'Created', value: `<t:${Math.floor(role.createdTimestamp / 1000)}:R>`, inline: true },
+            { name: 'Permissions', value: permissionsList, inline: false }
+        )
+        .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+}
+
+async function handleListRoles(interaction) {
+    const roles = interaction.guild.roles.cache
+        .filter(role => role.id !== interaction.guild.id) // Exclude @everyone
+        .sort((a, b) => b.position - a.position)
+        .map((role, index) => `${index + 1}. ${role} (${role.members.size} members)`)
+        .slice(0, 20); // Limit to 20 roles to avoid embed limits
+
+    const embed = new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setTitle(`📋 Server Roles (${interaction.guild.roles.cache.size - 1} total)`)
+        .setDescription(roles.join('\n') || 'No roles found')
+        .setFooter({ text: roles.length >= 20 ? 'Showing first 20 roles' : `Showing all ${roles.length} roles` })
+        .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+}
+
+async function handleRoleMembers(interaction) {
+    const role = interaction.options.getRole('role');
+    
+    if (role.members.size === 0) {
+        return interaction.reply({
+            content: `❌ No members have the ${role.name} role.`,
+            flags: 64
+        });
+    }
+
+    await interaction.deferReply();
+
+    const members = role.members
+        .map(member => `${member.user.tag} (${member.id})`)
+        .slice(0, 50); // Limit to 50 members
+
+    const embed = new EmbedBuilder()
+        .setColor(role.color)
+        .setTitle(`👥 Members with ${role.name} role`)
+        .setDescription(members.join('\n') || 'No members found')
+        .addFields({
+            name: 'Statistics',
+            value: `**Total Members:** ${role.members.size}\n**Showing:** ${members.length}`,
+            inline: true
+        })
+        .setFooter({ text: members.length >= 50 ? 'Showing first 50 members' : `Showing all ${members.length} members` })
+        .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+}
+
+async function saveRoleAssignment(member, role, assignedBy) {
+    try {
+        const isVoiceRole = ['Voice Newcomer', 'Voice Regular', 'Voice Enthusiast', 'Voice Expert', 'Voice Master', 'Voice Legend'].includes(role.name);
+        const level = getVoiceLevelFromRole(role.name);
+        
+        await UserRoles.findOneAndUpdate(
+            { userId: member.id, guildId: member.guild.id },
+            {
+                userId: member.id,
+                guildId: member.guild.id,
+                username: member.user.username,
+                lastSeen: new Date(),
+                $addToSet: {
+                    roles: {
+                        roleId: role.id,
+                        roleName: role.name,
+                        assignedAt: new Date(),
+                        assignedBy: assignedBy,
+                        isAutoRole: role.id === process.env.AUTO_ROLE_ID,
+                        isVoiceRole: isVoiceRole,
+                        level: level
+                    }
+                }
+            },
+            { upsert: true, new: true }
+        );
+        
+        console.log(`📝 Saved role assignment: ${role.name} to ${member.user.tag}`);
+    } catch (error) {
+        console.error('Error saving role assignment:', error);
+    }
+}
+
+async function removeRoleAssignment(member, role) {
+    try {
+        await UserRoles.findOneAndUpdate(
+            { userId: member.id, guildId: member.guild.id },
+            {
+                $pull: {
+                    roles: { roleId: role.id }
+                },
+                lastSeen: new Date()
+            }
+        );
+        
+        console.log(`📝 Removed role assignment: ${role.name} from ${member.user.tag}`);
+    } catch (error) {
+        console.error('Error removing role assignment:', error);
+    }
+}
+
+function getVoiceLevelFromRole(roleName) {
+    const voiceLevels = {
+        'Voice Newcomer': 5,
+        'Voice Regular': 10,
+        'Voice Enthusiast': 20,
+        'Voice Expert': 35,
+        'Voice Master': 50,
+        'Voice Legend': 75
+    };
+    return voiceLevels[roleName] || null;
+}
