@@ -62,7 +62,7 @@ module.exports = {
             
             // Success embed
             const successEmbed = new EmbedBuilder()
-                .setColor('#00ff00')
+                .setColor(Colors.SUCCESS)
                 .setTitle('✅ Messages Cleared')
                 .setDescription(`Successfully cleared ${messagesToDelete.size} message(s)`)
                 .addFields(
@@ -80,7 +80,7 @@ module.exports = {
                 const logChannel = interaction.guild.channels.cache.get(logChannelId);
                 if (logChannel && logChannel.id !== interaction.channel.id) {
                     const logEmbed = new EmbedBuilder()
-                        .setColor('#ff6600')
+                        .setColor(Colors.WARNING)
                         .setTitle('🧹 Messages Cleared')
                         .setDescription(`${messagesToDelete.size} message(s) were cleared by ${interaction.user}`)
                         .addFields(

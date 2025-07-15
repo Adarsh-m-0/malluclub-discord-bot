@@ -130,7 +130,7 @@ module.exports = {
             // DM the user
             try {
                 const dmEmbed = new EmbedBuilder()
-                    .setColor('#ff6600')
+                    .setColor(Colors.WARNING)
                     .setTitle('🔇 You have been muted')
                     .setDescription(`You have been muted in **${interaction.guild.name}**`)
                     .addFields(
@@ -159,7 +159,7 @@ module.exports = {
             const statusIcon = muteMethodsUsed.length === 2 ? '🔒' : '⏱️';
             
             const successEmbed = new EmbedBuilder()
-                .setColor('#ff6600')
+                .setColor(Colors.WARNING)
                 .setTitle('🔇 Member Muted Successfully')
                 .setDescription(`${statusIcon} **${target.tag}** has been muted`)
                 .addFields(
@@ -181,7 +181,7 @@ module.exports = {
                 const logChannel = interaction.guild.channels.cache.get(logChannelId);
                 if (logChannel) {
                     const logEmbed = new EmbedBuilder()
-                        .setColor('#ff6600')
+                        .setColor(Colors.WARNING)
                         .setTitle('🔇 Member Muted')
                         .setDescription(`${target} was muted by ${interaction.user}`)
                         .addFields(
@@ -230,7 +230,7 @@ async function createMuteRole(guild) {
         // Create the mute role
         const muteRole = await guild.roles.create({
             name: 'Muted',
-            color: '#6B6B6B',
+            color: Colors.LIGHT,
             reason: 'Mute role for moderation',
             permissions: []
         });

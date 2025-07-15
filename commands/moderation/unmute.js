@@ -74,7 +74,7 @@ module.exports = {
             // DM the user
             try {
                 const dmEmbed = new EmbedBuilder()
-                    .setColor('#00ff00')
+                    .setColor(Colors.SUCCESS)
                     .setTitle('🔊 You have been unmuted')
                     .setDescription(`You have been unmuted in **${interaction.guild.name}**`)
                     .addFields(
@@ -94,7 +94,7 @@ module.exports = {
             if (roleRemoved) statusIndicators.push('🔇 Mute Role Removed');
             
             const successEmbed = new EmbedBuilder()
-                .setColor('#00ff00')
+                .setColor(Colors.SUCCESS)
                 .setTitle('✅ Member Unmuted Successfully')
                 .setDescription(`**${target}** has been unmuted`)
                 .addFields(
@@ -133,7 +133,7 @@ module.exports = {
                 const logChannel = interaction.guild.channels.cache.get(logChannelId);
                 if (logChannel) {
                     const logEmbed = new EmbedBuilder()
-                        .setColor('#00ff00')
+                        .setColor(Colors.SUCCESS)
                         .setTitle('🔊 Member Unmuted')
                         .setDescription(`${target} was unmuted by ${interaction.user}`)
                         .addFields(
