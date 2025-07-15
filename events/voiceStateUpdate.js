@@ -2,6 +2,9 @@ const XPManager = require('../utils/XPManager');
 const logger = require('../utils/logger');
 const { EmbedTemplates, Colors } = require('../utils/EmbedTemplates');
 
+// Simple debounce map to prevent duplicate logs
+const logDebounce = new Map();
+
 module.exports = {
     name: 'voiceStateUpdate',
     async execute(oldState, newState) {
@@ -17,8 +20,11 @@ module.exports = {
             const oldChannel = oldState.channel;
             const newChannel = newState.channel;
 
-            // Send voice log message
-            await this.sendVoiceLog(member, oldChannel, newChannel);
+            // Send voice log message (with debounce to prevent duplicates)
+            // Only log if there's an actual channel change (join, leave, or switch)
+            if ((!oldChannel && newChannel) || (oldChannel && !newChannel) || (oldChannel && newChannel && oldChannel.id !== newChannel.id)) {
+                await this.sendVoiceLog(member, oldChannel, newChannel);
+            }
 
             // User joined a voice channel
             if (!oldChannel && newChannel) {
@@ -143,6 +149,29 @@ module.exports = {
      */
     async sendVoiceLog(member, oldChannel, newChannel) {
         try {
+            // Create a unique key for this log event
+            const logKey = `${member.id}_${oldChannel?.id || 'null'}_${newChannel?.id || 'null'}_${Date.now()}`;
+            const debounceKey = `${member.id}_${oldChannel?.id || 'null'}_${newChannel?.id || 'null'}`;
+            
+            // Check if this exact same transition was logged recently (within 2 seconds)
+            const lastLogTime = logDebounce.get(debounceKey);
+            const now = Date.now();
+            
+            if (lastLogTime && (now - lastLogTime) < 2000) {
+                // Skip this log as it's a duplicate within 2 seconds
+                return;
+            }
+            
+            // Update the debounce map
+            logDebounce.set(debounceKey, now);
+            
+            // Clean up old entries from debounce map (older than 5 seconds)
+            for (const [key, time] of logDebounce.entries()) {
+                if (now - time > 5000) {
+                    logDebounce.delete(key);
+                }
+            }
+            
             // Check for environment variable first
             let logChannel = null;
             
