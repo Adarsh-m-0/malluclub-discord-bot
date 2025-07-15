@@ -187,6 +187,28 @@ async function handleApplyRole(interaction) {
     try {
         // Get all members without the role
         await interaction.guild.members.fetch();
+        // Check bot permissions first
+        const botMember = interaction.guild.members.me;
+        if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
+            return interaction.editReply({
+                content: '❌ I don\'t have permission to manage roles.'
+            });
+        }
+
+        // Check role hierarchy
+        if (role.position >= botMember.roles.highest.position) {
+            return interaction.editReply({
+                content: `❌ Cannot assign roles higher than or equal to my highest role.\nMy highest role: **${botMember.roles.highest.name}** (Position: ${botMember.roles.highest.position})\nTarget role: **${role.name}** (Position: ${role.position})`
+            });
+        }
+
+        // Check if role is managed
+        if (role.managed) {
+            return interaction.editReply({
+                content: '❌ Cannot assign managed roles (bot roles, boost roles, etc.).'
+            });
+        }
+
         const membersToUpdate = interaction.guild.members.cache.filter(member => 
             !member.user.bot && !member.roles.cache.has(role.id)
         );
@@ -199,9 +221,10 @@ async function handleApplyRole(interaction) {
         
         let successCount = 0;
         let errorCount = 0;
+        const errors = [];
         
         // Apply role to members in batches to avoid rate limits
-        const batchSize = 10;
+        const batchSize = 5; // Reduced batch size for better reliability
         const batches = [];
         const memberArray = Array.from(membersToUpdate.values());
         
@@ -213,18 +236,31 @@ async function handleApplyRole(interaction) {
             const promises = batch.map(async (member) => {
                 try {
                     await member.roles.add(role, 'Bulk role application');
+                    console.log(`✅ Added role ${role.name} to ${member.user.tag}`);
                     successCount++;
                 } catch (error) {
-                    console.error(`Failed to add role to ${member.user.tag}:`, error);
+                    console.error(`❌ Failed to add role to ${member.user.tag}:`, error);
+                    
+                    // Collect specific error information
+                    let errorReason = 'Unknown error';
+                    if (error.code === 50013) {
+                        errorReason = 'Missing permissions';
+                    } else if (error.code === 50001) {
+                        errorReason = 'Access denied';
+                    } else if (error.code === 50034) {
+                        errorReason = 'User left server';
+                    }
+                    
+                    errors.push(`${member.user.tag}: ${errorReason}`);
                     errorCount++;
                 }
             });
             
             await Promise.all(promises);
             
-            // Add a small delay between batches to respect rate limits
+            // Add a longer delay between batches to respect rate limits
             if (batches.indexOf(batch) < batches.length - 1) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise(resolve => setTimeout(resolve, 1500));
             }
         }
         
@@ -238,6 +274,21 @@ async function handleApplyRole(interaction) {
                 { name: '📊 Total Processed', value: (successCount + errorCount).toString(), inline: true }
             )
             .setTimestamp();
+
+        // Add error details if there were failures
+        if (errors.length > 0 && errors.length <= 10) {
+            embed.addFields({
+                name: '❌ Error Details',
+                value: errors.slice(0, 10).join('\n'),
+                inline: false
+            });
+        } else if (errors.length > 10) {
+            embed.addFields({
+                name: '❌ Error Details',
+                value: errors.slice(0, 10).join('\n') + `\n... and ${errors.length - 10} more errors`,
+                inline: false
+            });
+        }
 
         await interaction.editReply({ embeds: [embed] });
         

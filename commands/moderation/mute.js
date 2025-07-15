@@ -83,11 +83,24 @@ module.exports = {
             let roleAdded = false;
             if (muteRole && !member.roles.cache.has(muteRole.id)) {
                 try {
-                    await member.roles.add(muteRole, `Muted by ${interaction.user.tag}: ${reason}`);
-                    roleAdded = true;
-                    console.log(`Added mute role to ${target.tag}`);
+                    // Check if bot can manage this role
+                    const botMember = interaction.guild.members.me;
+                    if (muteRole.position >= botMember.roles.highest.position) {
+                        console.log(`Cannot manage mute role - position too high (${muteRole.position} >= ${botMember.roles.highest.position})`);
+                    } else if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
+                        console.log('Bot missing MANAGE_ROLES permission');
+                    } else {
+                        await member.roles.add(muteRole, `Muted by ${interaction.user.tag}: ${reason}`);
+                        roleAdded = true;
+                        console.log(`✅ Added mute role to ${target.tag}`);
+                    }
                 } catch (roleError) {
                     console.error('Could not add mute role:', roleError.message);
+                    if (roleError.code === 50013) {
+                        console.log('Missing permissions to assign mute role');
+                    } else if (roleError.code === 50001) {
+                        console.log('Access denied for mute role assignment');
+                    }
                 }
             }
             

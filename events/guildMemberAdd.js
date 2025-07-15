@@ -85,12 +85,25 @@ async function handleAutoRoleAssignment(member) {
         if (process.env.AUTO_ROLE_ID) {
             const autoRole = member.guild.roles.cache.get(process.env.AUTO_ROLE_ID);
             if (autoRole) {
-                // Check if bot can assign this role
-                if (autoRole.position < member.guild.members.me.roles.highest.position) {
+                // Check bot permissions
+                const botMember = member.guild.members.me;
+                if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
+                    console.error('❌ Bot missing MANAGE_ROLES permission for auto-role');
+                    return;
+                }
+
+                // Check if bot can assign this role (hierarchy check)
+                if (autoRole.position < botMember.roles.highest.position) {
+                    // Check if role is managed
+                    if (autoRole.managed) {
+                        console.error(`❌ Cannot assign managed auto-role ${autoRole.name}`);
+                        return;
+                    }
+
                     await member.roles.add(autoRole, 'Auto-role assignment for new member');
                     console.log(`✅ Assigned auto-role ${autoRole.name} to ${member.user.tag}`);
                 } else {
-                    console.error(`❌ Cannot assign auto-role ${autoRole.name} - insufficient permissions`);
+                    console.error(`❌ Cannot assign auto-role ${autoRole.name} - role position (${autoRole.position}) >= bot highest role position (${botMember.roles.highest.position})`);
                 }
             } else {
                 console.error('❌ Auto-role ID set but role not found');
@@ -98,7 +111,12 @@ async function handleAutoRoleAssignment(member) {
             }
         }
     } catch (error) {
-        console.error('Error assigning auto-role:', error);
+        console.error('❌ Error assigning auto-role:', error);
+        if (error.code === 50013) {
+            console.error('Missing permissions to assign auto-role');
+        } else if (error.code === 50001) {
+            console.error('Access denied for auto-role assignment');
+        }
     }
 }
 
@@ -129,10 +147,28 @@ async function handleVoiceLevelRoles(member) {
                     const role = member.guild.roles.cache.find(r => r.name === roleName);
                     if (role && !member.roles.cache.has(role.id)) {
                         try {
+                            // Check bot permissions
+                            const botMember = member.guild.members.me;
+                            if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
+                                console.error('❌ Bot missing MANAGE_ROLES permission for voice roles');
+                                continue;
+                            }
+
+                            // Check role hierarchy
+                            if (role.position >= botMember.roles.highest.position) {
+                                console.error(`❌ Cannot assign voice role ${roleName} - role position too high`);
+                                continue;
+                            }
+
                             await member.roles.add(role, `Voice level ${voiceData.level} role assignment`);
                             console.log(`✅ Assigned voice role ${roleName} to returning member ${member.user.tag}`);
                         } catch (error) {
-                            console.error(`Failed to assign voice role ${roleName}:`, error);
+                            console.error(`❌ Failed to assign voice role ${roleName}:`, error);
+                            if (error.code === 50013) {
+                                console.error('Missing permissions for voice role assignment');
+                            } else if (error.code === 50001) {
+                                console.error('Access denied for voice role assignment');
+                            }
                         }
                     }
                 }
@@ -183,20 +219,44 @@ async function handleReturningMember(member) {
                     continue;
                 }
                 
-                // Check if bot can assign this role
-                if (role.position >= member.guild.members.me.roles.highest.position) {
-                    console.log(`Cannot assign role ${role.name} - insufficient permissions`);
+                // Check bot permissions and role hierarchy
+                const botMember = member.guild.members.me;
+                if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
+                    console.log(`❌ Bot missing MANAGE_ROLES permission for role restoration`);
+                    failedCount++;
+                    continue;
+                }
+
+                if (role.position >= botMember.roles.highest.position) {
+                    console.log(`❌ Cannot assign role ${role.name} - role position (${role.position}) >= bot highest (${botMember.roles.highest.position})`);
+                    failedCount++;
+                    continue;
+                }
+
+                if (role.managed) {
+                    console.log(`❌ Cannot assign managed role ${role.name}`);
                     failedCount++;
                     continue;
                 }
                 
                 // Assign the role
-                await member.roles.add(role, `Restored role for returning member (rejoin #${savedRoles.rejoinCount})`);
-                restoredRoles.push(role.name);
-                restoredCount++;
+                try {
+                    await member.roles.add(role, `Restored role for returning member (rejoin #${savedRoles.rejoinCount})`);
+                    restoredRoles.push(role.name);
+                    restoredCount++;
+                    console.log(`✅ Restored role ${role.name} to ${member.user.tag}`);
+                } catch (assignError) {
+                    console.error(`❌ Failed to assign role ${role.name}:`, assignError);
+                    if (assignError.code === 50013) {
+                        console.error('Missing permissions for role assignment');
+                    } else if (assignError.code === 50001) {
+                        console.error('Access denied for role assignment');
+                    }
+                    failedCount++;
+                }
                 
                 // Small delay to avoid rate limits
-                await new Promise(resolve => setTimeout(resolve, 200));
+                await new Promise(resolve => setTimeout(resolve, 300));
                 
             } catch (error) {
                 console.error(`Failed to restore role ${savedRole.roleName}:`, error);

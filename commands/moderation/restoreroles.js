@@ -22,10 +22,28 @@ module.exports = {
         await interaction.deferReply();
 
         try {
-            const member = await interaction.guild.members.fetch(targetUser.id);
+            // Fetch member with error handling
+            let member;
+            try {
+                member = await interaction.guild.members.fetch(targetUser.id);
+            } catch (fetchError) {
+                console.error('Failed to fetch member:', fetchError);
+                return interaction.editReply({
+                    content: '❌ User not found in this server or failed to fetch member data.'
+                });
+            }
+
             if (!member) {
                 return interaction.editReply({
                     content: '❌ User not found in this server.'
+                });
+            }
+
+            // Check bot permissions
+            const botMember = interaction.guild.members.me;
+            if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
+                return interaction.editReply({
+                    content: '❌ I don\'t have permission to manage roles in this server.'
                 });
             }
 
@@ -55,9 +73,11 @@ module.exports = {
 
             for (const savedRole of rolesToRestore) {
                 try {
+                    // Fetch role with better error handling
                     const role = interaction.guild.roles.cache.get(savedRole.roleId);
                     
                     if (!role) {
+                        console.log(`Role ${savedRole.roleName} (${savedRole.roleId}) not found in guild`);
                         results.push(`⚠️ **${savedRole.roleName}** - Role no longer exists`);
                         failedCount++;
                         continue;
@@ -70,24 +90,48 @@ module.exports = {
                         continue;
                     }
 
-                    // Check if bot can assign this role
-                    if (role.position >= interaction.guild.members.me.roles.highest.position) {
-                        results.push(`❌ **${savedRole.roleName}** - Insufficient permissions`);
+                    // Check if bot can assign this role (hierarchy check)
+                    const botHighestRole = interaction.guild.members.me.roles.highest;
+                    if (role.position >= botHighestRole.position) {
+                        console.log(`Cannot manage role ${role.name} (pos: ${role.position}) - Bot highest role (pos: ${botHighestRole.position})`);
+                        results.push(`❌ **${savedRole.roleName}** - Role too high in hierarchy`);
                         failedCount++;
                         continue;
                     }
 
-                    // Assign the role
-                    await member.roles.add(role, `Role restored by ${interaction.user.tag}`);
-                    results.push(`✅ **${savedRole.roleName}** - Restored successfully`);
-                    restoredCount++;
+                    // Check if role is managed (by bots/integrations)
+                    if (role.managed) {
+                        results.push(`❌ **${savedRole.roleName}** - Managed role (cannot assign)`);
+                        failedCount++;
+                        continue;
+                    }
 
-                    // Small delay to avoid rate limits
-                    await new Promise(resolve => setTimeout(resolve, 200));
+                    // Assign the role with improved error handling
+                    try {
+                        await member.roles.add(role, `Role restored by ${interaction.user.tag}`);
+                        console.log(`✅ Successfully restored role ${role.name} to ${targetUser.tag}`);
+                        results.push(`✅ **${savedRole.roleName}** - Restored successfully`);
+                        restoredCount++;
+                    } catch (assignError) {
+                        console.error(`Failed to assign role ${role.name}:`, assignError);
+                        
+                        // Provide more specific error messages
+                        if (assignError.code === 50013) {
+                            results.push(`❌ **${savedRole.roleName}** - Missing permissions`);
+                        } else if (assignError.code === 50001) {
+                            results.push(`❌ **${savedRole.roleName}** - Access denied`);
+                        } else {
+                            results.push(`❌ **${savedRole.roleName}** - Assignment failed`);
+                        }
+                        failedCount++;
+                    }
+
+                    // Rate limit protection - wait between each assignment
+                    await new Promise(resolve => setTimeout(resolve, 250));
 
                 } catch (error) {
-                    console.error(`Failed to restore role ${savedRole.roleName}:`, error);
-                    results.push(`❌ **${savedRole.roleName}** - Failed to restore`);
+                    console.error(`Error processing role ${savedRole.roleName}:`, error);
+                    results.push(`❌ **${savedRole.roleName}** - Processing error`);
                     failedCount++;
                 }
             }

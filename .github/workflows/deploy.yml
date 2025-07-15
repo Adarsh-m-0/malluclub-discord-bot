@@ -7,6 +7,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: production
     
     steps:
     - name: Checkout code
@@ -40,11 +41,31 @@ jobs:
           echo "📦 Installing dependencies..."
           npm install --production
           
-          # Check for .env file
-          if [ ! -f ".env" ]; then
-            echo "❌ .env file not found! Please create it first."
-            exit 1
-          fi
+          # Update environment variables from secrets
+          echo "🔐 Updating environment variables..."
+          cat > .env << 'EOL'
+          # MalluClub Discord Bot Environment Variables - Auto-generated from GitHub Secrets
+          
+          # Discord Bot Configuration
+          DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}
+          CLIENT_ID=${{ secrets.CLIENT_ID }}
+          GUILD_ID=${{ secrets.GUILD_ID }}
+          
+          # MongoDB Configuration
+          MONGODB_URI=${{ secrets.MONGODB_URI }}
+          
+          # Channel Configuration
+          WELCOME_CHANNEL_ID=${{ secrets.WELCOME_CHANNEL_ID }}
+          LOG_CHANNEL_ID=${{ secrets.LOG_CHANNEL_ID }}
+          AUTO_ROLE_ID=${{ secrets.AUTO_ROLE_ID }}
+          
+          # Optional Configuration
+          OWNER_IDS=${{ secrets.OWNER_IDS }}
+          VOICE_XP_RATE=${{ secrets.VOICE_XP_RATE }}
+          
+          # Environment
+          NODE_ENV=production
+          EOL
           
           # Verify bot files
           echo "🔍 Verifying bot files..."
@@ -60,11 +81,18 @@ jobs:
           pm2 start ecosystem.config.js || pm2 start index.js --name malluclub-bot
           
           # Wait a moment for startup
-          sleep 3
+          sleep 5
           
           # Check status
           echo "📊 Checking bot status..."
           pm2 status malluclub-bot
           pm2 logs malluclub-bot --lines 10
+          
+          # Send success notification if webhook is configured
+          if [ ! -z "${{ secrets.DISCORD_WEBHOOK_URL }}" ]; then
+            curl -H "Content-Type: application/json" \
+                 -d '{"content":"✅ **MalluClub Bot** deployed successfully to Contabo server!"}' \
+                 "${{ secrets.DISCORD_WEBHOOK_URL }}" || true
+          fi
           
           echo "✅ Deployment completed successfully!"

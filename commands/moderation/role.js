@@ -222,7 +222,17 @@ async function handleDeleteRole(interaction) {
 async function handleAddRole(interaction) {
     const user = interaction.options.getUser('user');
     const role = interaction.options.getRole('role');
-    const member = await interaction.guild.members.fetch(user.id);
+    
+    // Fetch member with error handling
+    let member;
+    try {
+        member = await interaction.guild.members.fetch(user.id);
+    } catch (fetchError) {
+        return interaction.reply({
+            content: '❌ User not found in this server or failed to fetch member data.',
+            ephemeral: true
+        });
+    }
 
     if (!member) {
         return interaction.reply({
@@ -238,9 +248,35 @@ async function handleAddRole(interaction) {
         });
     }
 
-    if (role.position >= interaction.guild.members.me.roles.highest.position) {
+    // Check if role is @everyone
+    if (role.id === interaction.guild.id) {
         return interaction.reply({
-            content: '❌ Cannot assign roles higher than or equal to my highest role.',
+            content: '❌ Cannot assign the @everyone role.',
+            ephemeral: true
+        });
+    }
+
+    // Check if role is managed
+    if (role.managed) {
+        return interaction.reply({
+            content: '❌ Cannot assign managed roles (bot roles, boost roles, etc.).',
+            ephemeral: true
+        });
+    }
+
+    // Check bot permissions
+    const botMember = interaction.guild.members.me;
+    if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        return interaction.reply({
+            content: '❌ I don\'t have permission to manage roles.',
+            ephemeral: true
+        });
+    }
+
+    // Check role hierarchy
+    if (role.position >= botMember.roles.highest.position) {
+        return interaction.reply({
+            content: `❌ Cannot assign roles higher than or equal to my highest role.\nMy highest role: **${botMember.roles.highest.name}** (Position: ${botMember.roles.highest.position})\nTarget role: **${role.name}** (Position: ${role.position})`,
             ephemeral: true
         });
     }
@@ -266,8 +302,19 @@ async function handleAddRole(interaction) {
 
     } catch (error) {
         console.error('Error adding role:', error);
+        
+        // Provide more specific error messages
+        let errorMessage = '❌ Failed to add role.';
+        if (error.code === 50013) {
+            errorMessage = '❌ Missing permissions to assign this role.';
+        } else if (error.code === 50001) {
+            errorMessage = '❌ Access denied - cannot assign this role.';
+        } else if (error.code === 50034) {
+            errorMessage = '❌ Cannot assign roles to users who have left the server.';
+        }
+        
         await interaction.reply({
-            content: '❌ Failed to add role. Check my permissions and try again.',
+            content: errorMessage + ' Check my permissions and role hierarchy.',
             ephemeral: true
         });
     }
