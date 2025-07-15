@@ -49,29 +49,37 @@ module.exports = {
             // Calculate next level info
             const nextLevelXP = VoiceActivity.getXPForNextLevel(userStats.level);
             const currentLevelXP = userStats.level > 1 ? VoiceActivity.getXPForNextLevel(userStats.level - 1) : 0;
-            const progress = userStats.voiceXP - currentLevelXP;
-            const needed = nextLevelXP - currentLevelXP;
-            const percentage = Math.round((progress / needed) * 100);
+            const progress = Math.max(0, userStats.voiceXP - currentLevelXP);
+            const needed = Math.max(1, nextLevelXP - currentLevelXP);
+            const percentage = Math.min(100, Math.max(0, Math.round((progress / needed) * 100)));
 
             // Calculate average session time
-            const avgSessionTime = userStats.sessions.length > 0 
+            const avgSessionTime = userStats.sessions && userStats.sessions.length > 0 
                 ? userStats.totalVoiceTime / userStats.sessions.length 
                 : 0;
 
             // Get most active channel
             const channelCounts = {};
-            userStats.sessions.forEach(session => {
-                channelCounts[session.channelName] = (channelCounts[session.channelName] || 0) + 1;
-            });
-            const mostActiveChannel = Object.keys(channelCounts).reduce((a, b) => 
-                channelCounts[a] > channelCounts[b] ? a : b, 'None');
+            if (userStats.sessions && userStats.sessions.length > 0) {
+                userStats.sessions.forEach(session => {
+                    if (session.channelName) {
+                        channelCounts[session.channelName] = (channelCounts[session.channelName] || 0) + 1;
+                    }
+                });
+            }
+            const mostActiveChannel = Object.keys(channelCounts).length > 0 
+                ? Object.keys(channelCounts).reduce((a, b) => 
+                    channelCounts[a] > channelCounts[b] ? a : b) 
+                : 'None';
 
             // Recent activity (last 7 days)
             const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-            const recentSessions = userStats.sessions.filter(session => 
-                new Date(session.joinTime) > weekAgo
-            );
-            const recentTime = recentSessions.reduce((total, session) => total + session.duration, 0);
+            const recentSessions = userStats.sessions && userStats.sessions.length > 0
+                ? userStats.sessions.filter(session => 
+                    session.joinTime && new Date(session.joinTime) > weekAgo)
+                : [];
+            const recentTime = recentSessions.reduce((total, session) => 
+                total + (session.duration || 0), 0);
 
             const embed = new EmbedBuilder()
                 .setColor(0x5865F2)
@@ -85,16 +93,16 @@ module.exports = {
                         name: '🏆 Ranking',
                         value: [
                             `**Server Rank:** #${rank}`,
-                            `**Level:** ${userStats.level}`,
-                            `**Total XP:** ${userStats.voiceXP.toLocaleString()}`
+                            `**Level:** ${userStats.level || 1}`,
+                            `**Total XP:** ${(userStats.voiceXP || 0).toLocaleString()}`
                         ].join('\n'),
                         inline: true
                     },
                     {
                         name: '⏱️ Time Stats',
                         value: [
-                            `**Total Time:** ${formatTime(userStats.totalVoiceTime)}`,
-                            `**Sessions:** ${userStats.sessions.length}`,
+                            `**Total Time:** ${formatTime(userStats.totalVoiceTime || 0)}`,
+                            `**Sessions:** ${(userStats.sessions && userStats.sessions.length) || 0}`,
                             `**Avg Session:** ${formatTime(avgSessionTime)}`
                         ].join('\n'),
                         inline: true
@@ -102,8 +110,8 @@ module.exports = {
                     {
                         name: '🔥 Activity',
                         value: [
-                            `**Current Streak:** ${userStats.dailyStats.streak} days`,
-                            `**Today's Time:** ${formatTime(userStats.dailyStats.todayVoiceTime)}`,
+                            `**Current Streak:** ${(userStats.dailyStats && userStats.dailyStats.streak) || 0} days`,
+                            `**Today's Time:** ${formatTime((userStats.dailyStats && userStats.dailyStats.todayVoiceTime) || 0)}`,
                             `**This Week:** ${formatTime(recentTime)}`
                         ].join('\n'),
                         inline: true
@@ -111,9 +119,9 @@ module.exports = {
                     {
                         name: '🎯 Level Progress',
                         value: [
-                            `**Next Level:** ${userStats.level + 1}`,
+                            `**Next Level:** ${(userStats.level || 1) + 1}`,
                             `**Progress:** ${progress}/${needed} XP (${percentage}%)`,
-                            `**XP Needed:** ${nextLevelXP - userStats.voiceXP}`,
+                            `**XP Needed:** ${Math.max(0, nextLevelXP - (userStats.voiceXP || 0))}`,
                             createProgressBar(percentage)
                         ].join('\n'),
                         inline: false
@@ -144,7 +152,7 @@ module.exports = {
             }
 
             // Add current session info if user is in voice
-            if (userStats.currentSession.isActive) {
+            if (userStats.currentSession && userStats.currentSession.isActive && userStats.currentSession.joinTime) {
                 const sessionDuration = Date.now() - userStats.currentSession.joinTime.getTime();
                 const channel = interaction.guild.channels.cache.get(userStats.currentSession.channelId);
                 
@@ -165,19 +173,32 @@ module.exports = {
             })
             .setTimestamp();
 
-            await interaction.reply({ embeds: [embed] });
+            await interaction.editReply({ content: null, embeds: [embed] });
 
         } catch (error) {
+            logger.logError(error, {
+                context: 'Voice stats command',
+                userId: interaction.user.id,
+                targetUserId: targetUser.id,
+                guildId: interaction.guild.id
+            });
+            
             console.error('Voice stats error:', error);
-            await interaction.reply({
+            
+            await interaction.editReply({
                 content: '❌ Error fetching voice statistics. Please try again later.',
-                ephemeral: true
+                embeds: []
             });
         }
     },
 };
 
 function formatTime(milliseconds) {
+    // Handle null, undefined, or negative values
+    if (!milliseconds || milliseconds < 0) {
+        return '0m';
+    }
+    
     const hours = Math.floor(milliseconds / (1000 * 60 * 60));
     const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
     
@@ -192,7 +213,9 @@ function formatTime(milliseconds) {
 }
 
 function createProgressBar(percentage, length = 10) {
-    const filled = Math.round((percentage / 100) * length);
-    const empty = length - filled;
-    return `[${'█'.repeat(filled)}${'░'.repeat(empty)}] ${percentage}%`;
+    // Ensure percentage is within valid range
+    const validPercentage = Math.max(0, Math.min(100, percentage || 0));
+    const filled = Math.round((validPercentage / 100) * length);
+    const empty = Math.max(0, length - filled);
+    return `[${'█'.repeat(filled)}${'░'.repeat(empty)}] ${validPercentage}%`;
 }

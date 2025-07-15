@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const VoiceActivity = require('../../models/VoiceActivity');
+const logger = require('../../utils/logger');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -94,20 +95,20 @@ module.exports = {
                 let value;
                 switch (type) {
                     case 'xp':
-                        value = `${user.voiceXP.toLocaleString()} XP`;
+                        value = `${(user.voiceXP || 0).toLocaleString()} XP`;
                         break;
                     case 'time':
-                        value = formatTime(user.totalVoiceTime);
+                        value = formatTime(user.totalVoiceTime || 0);
                         break;
                     case 'streak':
-                        value = `${user.dailyStats?.streak || 0} days`;
+                        value = `${(user.dailyStats && user.dailyStats.streak) || 0} days`;
                         break;
                     case 'level':
-                        value = `Level ${user.level}`;
+                        value = `Level ${user.level || 1}`;
                         break;
                 }
 
-                leaderboardText += `${rankEmoji} **${user.username}**\n   ${value}\n\n`;
+                leaderboardText += `${rankEmoji} **${user.username || 'Unknown User'}**\n   ${value}\n\n`;
             }
 
             embed.addFields({
@@ -124,6 +125,14 @@ module.exports = {
             await interaction.editReply({ content: null, embeds: [embed] });
 
         } catch (error) {
+            logger.logError(error, {
+                context: 'Voice leaderboard command',
+                userId: interaction.user.id,
+                guildId: interaction.guild.id,
+                type: type,
+                limit: limit
+            });
+            
             console.error('Voice leaderboard error:', error);
             
             await interaction.editReply({
@@ -134,6 +143,11 @@ module.exports = {
 };
 
 function formatTime(milliseconds) {
+    // Handle null, undefined, or negative values
+    if (!milliseconds || milliseconds < 0) {
+        return '0m';
+    }
+    
     const hours = Math.floor(milliseconds / (1000 * 60 * 60));
     const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
     
