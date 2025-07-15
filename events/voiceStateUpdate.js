@@ -1,5 +1,6 @@
 const XPManager = require('../utils/XPManager');
 const logger = require('../utils/logger');
+const { EmbedTemplates, Colors } = require('../utils/EmbedTemplates');
 
 module.exports = {
     name: 'voiceStateUpdate',
@@ -15,6 +16,9 @@ module.exports = {
             // Log the voice state change
             const oldChannel = oldState.channel;
             const newChannel = newState.channel;
+
+            // Send voice log message
+            await this.sendVoiceLog(member, oldChannel, newChannel);
 
             // User joined a voice channel
             if (!oldChannel && newChannel) {
@@ -130,6 +134,97 @@ module.exports = {
                 context: 'Error in voiceStateUpdate event',
                 userId: oldState.member?.id || newState.member?.id,
                 guildId: oldState.guild?.id || newState.guild?.id
+            });
+        }
+    },
+
+    /**
+     * Send voice channel log to designated log channel
+     */
+    async sendVoiceLog(member, oldChannel, newChannel) {
+        try {
+            // Check for environment variable first
+            let logChannel = null;
+            
+            // Try to get voice log channel from environment variable
+            const voiceLogChannelId = process.env.VOICE_LOG_CHANNEL_ID;
+            if (voiceLogChannelId) {
+                logChannel = member.guild.channels.cache.get(voiceLogChannelId);
+            }
+            
+            // If not found, look for voice log channel by name
+            if (!logChannel) {
+                logChannel = member.guild.channels.cache.find(channel => 
+                    channel.name.includes('voice') && channel.name.includes('log') ||
+                    channel.name.includes('vc') && channel.name.includes('log') ||
+                    channel.name.includes('voice-log') ||
+                    channel.name.includes('vc-log')
+                );
+            }
+
+            // Fallback to general log channel if no voice-specific log channel exists
+            if (!logChannel) {
+                logChannel = member.guild.channels.cache.find(channel => 
+                    channel.name.includes('log') || 
+                    channel.name.includes('bot') ||
+                    channel.name.includes('admin')
+                );
+            }
+
+            if (!logChannel) return;
+
+            let embed;
+
+            // User joined a voice channel
+            if (!oldChannel && newChannel) {
+                embed = EmbedTemplates.createEmbed({
+                    title: 'Voice Channel Activity',
+                    description: `**${member.user.username}** joined **${newChannel.name}**`,
+                    color: Colors.SUCCESS,
+                    footer: {
+                        text: `Voice Activity • ${member.guild.name}`,
+                        iconURL: member.user.displayAvatarURL({ size: 16 })
+                    },
+                    timestamp: new Date()
+                });
+            }
+            // User left a voice channel
+            else if (oldChannel && !newChannel) {
+                embed = EmbedTemplates.createEmbed({
+                    title: 'Voice Channel Activity',
+                    description: `**${member.user.username}** left **${oldChannel.name}**`,
+                    color: Colors.ERROR,
+                    footer: {
+                        text: `Voice Activity • ${member.guild.name}`,
+                        iconURL: member.user.displayAvatarURL({ size: 16 })
+                    },
+                    timestamp: new Date()
+                });
+            }
+            // User switched voice channels
+            else if (oldChannel && newChannel && oldChannel.id !== newChannel.id) {
+                embed = EmbedTemplates.createEmbed({
+                    title: 'Voice Channel Activity',
+                    description: `**${member.user.username}** moved from **${oldChannel.name}** to **${newChannel.name}**`,
+                    color: Colors.INFO,
+                    footer: {
+                        text: `Voice Activity • ${member.guild.name}`,
+                        iconURL: member.user.displayAvatarURL({ size: 16 })
+                    },
+                    timestamp: new Date()
+                });
+            }
+
+            if (embed) {
+                await logChannel.send({ embeds: [embed] });
+            }
+
+        } catch (error) {
+            logger.logError(error, {
+                category: 'voice',
+                context: 'Error sending voice log',
+                userId: member.id,
+                guildId: member.guild.id
             });
         }
     }

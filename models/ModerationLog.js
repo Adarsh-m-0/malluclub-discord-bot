@@ -19,7 +19,7 @@ const moderationLogSchema = new mongoose.Schema({
     action: {
         type: String,
         required: true,
-        enum: ['kick', 'ban', 'mute', 'unmute', 'warn', 'warn_remove', 'warn_clear', 'clear']
+        enum: ['kick', 'ban', 'mute', 'unmute', 'warn', 'warn_remove', 'warn_clear', 'clear', 'message_delete']
     },
     reason: {
         type: String,
