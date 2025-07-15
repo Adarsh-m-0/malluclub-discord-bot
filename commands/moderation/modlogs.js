@@ -63,16 +63,21 @@ module.exports = {
                 }
             }
             
-            // Create embed
+            // Create enhanced embed
             const logsEmbed = new EmbedBuilder()
                 .setColor('#0099ff')
                 .setTitle('📋 Moderation Logs')
-                .setDescription(`Showing ${logs.length} recent log(s)${target ? ` for ${target.tag}` : ''}${action ? ` (${action})` : ''}${warningsText}`)
-                .setTimestamp();
+                .setDescription(`Showing **${logs.length}** recent log(s)${target ? ` for **${target.tag}**` : ''}${action ? ` filtered by **${action}**` : ''}${warningsText}`)
+                .setTimestamp()
+                .setFooter({ 
+                    text: `Requested by ${interaction.user.tag} | Total logs in database: ${await ModerationLog.countDocuments()}`, 
+                    iconURL: interaction.user.displayAvatarURL() 
+                });
             
-            // Add log entries
+            // Add log entries with better formatting
             let logsText = '';
             for (const log of logs) {
+                // Safely fetch user and moderator info
                 const moderator = await interaction.client.users.fetch(log.moderatorId).catch(() => null);
                 const user = await interaction.client.users.fetch(log.userId).catch(() => null);
                 
@@ -85,12 +90,27 @@ module.exports = {
                     clear: '🧹'
                 };
                 
-                logsText += `${actionEmoji[log.action] || '❓'} **${log.action.toUpperCase()}** | ${user ? user.tag : 'Unknown User'} | ${moderator ? moderator.tag : 'Unknown Moderator'}\n`;
-                logsText += `📝 ${log.reason}\n`;
-                logsText += `🕐 <t:${Math.floor(log.timestamp.getTime() / 1000)}:R>\n\n`;
+                // Format user and moderator display
+                const userDisplay = user ? `${user.tag}` : `Unknown User (${log.userId})`;
+                const moderatorDisplay = moderator ? `${moderator.tag}` : `Unknown Moderator (${log.moderatorId})`;
                 
-                if (logsText.length > 1500) {
-                    logsText += '... (truncated)';
+                // Add entry with improved formatting
+                logsText += `${actionEmoji[log.action] || '❓'} **${log.action.toUpperCase()}**\n`;
+                logsText += `👤 **User:** ${userDisplay}\n`;
+                logsText += `👮 **Moderator:** ${moderatorDisplay}\n`;
+                logsText += `📝 **Reason:** ${log.reason || 'No reason provided'}\n`;
+                logsText += `🕐 **Time:** <t:${Math.floor(log.timestamp.getTime() / 1000)}:R>\n`;
+                
+                // Add duration if it exists
+                if (log.duration) {
+                    logsText += `⏱️ **Duration:** ${log.duration}\n`;
+                }
+                
+                logsText += '\n';
+                
+                // Prevent embed from becoming too long
+                if (logsText.length > 1800) {
+                    logsText += `... and ${logs.length - logs.indexOf(log) - 1} more entries`;
                     break;
                 }
             }
