@@ -64,25 +64,30 @@ module.exports = {
         try {
             const muteUntil = new Date(Date.now() + durationMs);
             
-            // Primary method: Use Discord's built-in timeout (more reliable)
+            // Step 1: Apply Discord's built-in timeout (more reliable)
             await member.timeout(durationMs, reason);
+            console.log(`Applied timeout to ${target.tag} for ${duration}`);
             
-            // Backup method: Also apply mute role for additional control and longer durations
+            // Step 2: Get or create mute role for additional control
             let muteRole = interaction.guild.roles.cache.find(role => role.name === 'Muted');
             if (!muteRole) {
                 try {
                     muteRole = await createMuteRole(interaction.guild);
+                    console.log('Created new mute role');
                 } catch (roleError) {
-                    console.log('Could not create mute role, using timeout only');
+                    console.error('Could not create mute role:', roleError.message);
                 }
             }
             
-            // Add mute role as backup (especially useful for longer mutes)
+            // Step 3: Add mute role as backup (wait for timeout to be applied first)
+            let roleAdded = false;
             if (muteRole && !member.roles.cache.has(muteRole.id)) {
                 try {
                     await member.roles.add(muteRole, `Muted by ${interaction.user.tag}: ${reason}`);
+                    roleAdded = true;
+                    console.log(`Added mute role to ${target.tag}`);
                 } catch (roleError) {
-                    console.log('Could not add mute role, timeout still active');
+                    console.error('Could not add mute role:', roleError.message);
                 }
             }
             
@@ -127,22 +132,31 @@ module.exports = {
                 console.log('Could not send DM to user');
             }
             
-            // Success embed with better status indication
+            // Success embed with accurate status indication
+            // Re-check member state after applying mute methods
+            const isTimeoutActive = member.isCommunicationDisabled();
+            const isMuteRoleActive = muteRole && member.roles.cache.has(muteRole.id);
+            
             const muteMethodsUsed = [];
-            if (member.isCommunicationDisabled()) muteMethodsUsed.push('Discord Timeout');
-            if (muteRole && member.roles.cache.has(muteRole.id)) muteMethodsUsed.push('Mute Role');
+            if (isTimeoutActive) muteMethodsUsed.push('Discord Timeout');
+            if (isMuteRoleActive) muteMethodsUsed.push('Mute Role');
+            
+            const methodsText = muteMethodsUsed.length > 0 ? muteMethodsUsed.join(' + ') : 'Timeout Only';
+            const statusIcon = muteMethodsUsed.length === 2 ? '🔒' : '⏱️';
             
             const successEmbed = new EmbedBuilder()
-                .setColor('#00ff00')
-                .setTitle('✅ Member Muted')
-                .setDescription(`${target.tag} has been muted`)
+                .setColor('#ff6600')
+                .setTitle('🔇 Member Muted Successfully')
+                .setDescription(`${statusIcon} **${target.tag}** has been muted`)
                 .addFields(
-                    { name: 'Moderator', value: interaction.user.tag, inline: true },
-                    { name: 'Duration', value: duration, inline: true },
-                    { name: 'Methods', value: muteMethodsUsed.join(', ') || 'Timeout', inline: true },
-                    { name: 'Reason', value: reason, inline: false },
-                    { name: 'Expires', value: `<t:${Math.floor(muteUntil.getTime() / 1000)}:R>`, inline: true }
+                    { name: '👮 Moderator', value: interaction.user.tag, inline: true },
+                    { name: '⏰ Duration', value: duration, inline: true },
+                    { name: '🛡️ Methods Applied', value: methodsText, inline: true },
+                    { name: '📝 Reason', value: reason, inline: false },
+                    { name: '⏳ Expires', value: `<t:${Math.floor(muteUntil.getTime() / 1000)}:R>`, inline: true },
+                    { name: '📊 Status', value: `Timeout: ${isTimeoutActive ? '✅' : '❌'} | Role: ${isMuteRoleActive ? '✅' : '❌'}`, inline: true }
                 )
+                .setThumbnail(target.displayAvatarURL({ dynamic: true }))
                 .setTimestamp();
             
             await interaction.reply({ embeds: [successEmbed] });

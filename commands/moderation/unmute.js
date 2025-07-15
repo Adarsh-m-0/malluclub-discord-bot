@@ -35,16 +35,21 @@ module.exports = {
         }
         
         try {
-            // Remove timeout if present
+            let timeoutRemoved = false;
+            let roleRemoved = false;
+            
+            // Step 1: Remove timeout if present
             if (hasTimeout) {
                 await member.timeout(null, reason);
-                console.log('Removed Discord timeout');
+                timeoutRemoved = true;
+                console.log(`Removed Discord timeout from ${target.tag}`);
             }
             
-            // Remove mute role if it exists
+            // Step 2: Remove mute role if it exists
             if (hasMuteRole) {
                 await member.roles.remove(muteRole, `Unmuted by ${interaction.user.tag}: ${reason}`);
-                console.log('Removed mute role');
+                roleRemoved = true;
+                console.log(`Removed mute role from ${target.tag}`);
             }
             
             // Update database
@@ -82,23 +87,44 @@ module.exports = {
                 console.log('Could not send DM to user');
             }
             
-            // Success embed with better status indication
-            const unmuteMethodsUsed = [];
-            if (hasTimeout && !member.isCommunicationDisabled()) unmuteMethodsUsed.push('Discord Timeout Removed');
-            if (hasMuteRole && (!muteRole || !member.roles.cache.has(muteRole.id))) unmuteMethodsUsed.push('Mute Role Removed');
+            // Success embed with detailed status indication
+            const statusIndicators = [];
+            if (timeoutRemoved) statusIndicators.push('⏱️ Discord Timeout Removed');
+            if (roleRemoved) statusIndicators.push('🔇 Mute Role Removed');
             
             const successEmbed = new EmbedBuilder()
                 .setColor('#00ff00')
-                .setTitle('✅ Member Unmuted')
-                .setDescription(`${target.tag} has been unmuted`)
+                .setTitle('✅ Member Unmuted Successfully')
+                .setDescription(`**${target}** has been unmuted`)
                 .addFields(
-                    { name: 'Moderator', value: interaction.user.tag, inline: true },
-                    { name: 'Methods', value: unmuteMethodsUsed.join(', ') || 'Unmuted', inline: true },
-                    { name: 'Reason', value: reason, inline: false }
+                    { 
+                        name: '👤 Member', 
+                        value: `${target.tag}\n\`${target.id}\``, 
+                        inline: true 
+                    },
+                    { 
+                        name: '👮 Moderator', 
+                        value: `${interaction.user.tag}\n\`${interaction.user.id}\``, 
+                        inline: true 
+                    },
+                    { 
+                        name: '📝 Reason', 
+                        value: reason, 
+                        inline: false 
+                    },
+                    {
+                        name: '🔧 Actions Performed',
+                        value: statusIndicators.length > 0 ? statusIndicators.join('\n') : 'No mute found to remove',
+                        inline: false
+                    }
                 )
-                .setTimestamp();
+                .setTimestamp()
+                .setFooter({ 
+                    text: `Unmuted by ${interaction.user.tag}`, 
+                    iconURL: interaction.user.displayAvatarURL() 
+                });
             
-            await interaction.reply({ embeds: [successEmbed] });
+            await interaction.editReply({ embeds: [successEmbed] });
             
             // Log to log channel
             const logChannelId = process.env.LOG_CHANNEL_ID;

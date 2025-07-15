@@ -463,3 +463,24 @@ netstat -tulpn
 ```
 
 Your MalluClub Discord Bot is now ready for production hosting on Contabo! 🎉
+
+
+
+# 1. Pull latest changes from GitHub
+git pull origin main
+
+# 2. Install any new dependencies
+npm install --production
+
+# 3. Stop the current bot instance
+pm2 stop malluclub-bot
+
+# 4. Deploy the updated commands to Discord
+node deploy-commands-new.js
+
+# 5. Start the bot with the new changes
+pm2 restart malluclub-bot
+
+# 6. Check if everything is working
+pm2 status
+pm2 logs malluclub-bot --lines 20
