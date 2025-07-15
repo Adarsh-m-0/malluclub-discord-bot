@@ -1,30 +1,28 @@
 const { EmbedBuilder } = require('discord.js');
 
-// Discord's official color palette
+// Discord's official color palette - Updated for purple theme
 const Colors = {
-    // Brand colors
-    BLURPLE: 0x5865F2,
-    GREEN: 0x57F287,
-    YELLOW: 0xFEE75C,
-    FUCHSIA: 0xEB459E,
-    RED: 0xED4245,
+    // Primary purple theme
+    PRIMARY: 0x7B68EE,
+    PURPLE: 0x9B59B6,
+    DARK_PURPLE: 0x663399,
+    LIGHT_PURPLE: 0xB19CD9,
     
     // Status colors
-    SUCCESS: 0x00D166,
+    SUCCESS: 0x57F287,
     WARNING: 0xFFAA00,
     ERROR: 0xFF4757,
-    INFO: 0x3742FA,
+    INFO: 0x7B68EE,
     
     // Neutral colors
     DARK: 0x2F3136,
     LIGHT: 0x99AAB5,
     WHITE: 0xFFFFFF,
     
-    // Custom theme colors
+    // Feature colors
     VOICE_XP: 0x9B59B6,
-    MODERATION: 0xE74C3C,
-    FUN: 0xF39C12,
-    MUSIC: 0x1DB954
+    MODERATION: 0x7B68EE,
+    UTILITY: 0x8A7CA8
 };
 
 class EmbedTemplates {
@@ -32,10 +30,10 @@ class EmbedTemplates {
     static success(title, description, user) {
         return new EmbedBuilder()
             .setColor(Colors.SUCCESS)
-            .setTitle(`✅ ${title}`)
+            .setTitle(title)
             .setDescription(description)
             .setFooter({
-                text: `Action completed • ${user.tag}`,
+                text: `Action completed by ${user.tag}`,
                 iconURL: user.displayAvatarURL()
             })
             .setTimestamp();
@@ -45,7 +43,7 @@ class EmbedTemplates {
     static error(title, description, user) {
         return new EmbedBuilder()
             .setColor(Colors.ERROR)
-            .setTitle(`❌ ${title}`)
+            .setTitle(title)
             .setDescription(description)
             .setFooter({
                 text: `Error occurred • ${user.tag}`,
@@ -57,8 +55,8 @@ class EmbedTemplates {
     // Information display template
     static info(title, description, guild) {
         return new EmbedBuilder()
-            .setColor(Colors.INFO)
-            .setTitle(`ℹ️ ${title}`)
+            .setColor(Colors.PRIMARY)
+            .setTitle(title)
             .setDescription(description)
             .setThumbnail(guild?.iconURL() || null)
             .setFooter({
@@ -71,9 +69,9 @@ class EmbedTemplates {
     // User profile template
     static userProfile(user, guild) {
         return new EmbedBuilder()
-            .setColor(Colors.BLURPLE)
+            .setColor(Colors.PRIMARY)
             .setAuthor({
-                name: `${user.tag}`,
+                name: user.tag,
                 iconURL: user.displayAvatarURL()
             })
             .setThumbnail(user.displayAvatarURL({ size: 256 }))
@@ -89,7 +87,7 @@ class EmbedTemplates {
         return new EmbedBuilder()
             .setColor(Colors.VOICE_XP)
             .setAuthor({
-                name: `🎤 ${user.username}'s Voice Stats`,
+                name: `${user.username}'s Voice Stats`,
                 iconURL: user.displayAvatarURL()
             })
             .setThumbnail(user.displayAvatarURL())
@@ -105,22 +103,15 @@ class EmbedTemplates {
         const actionColors = {
             ban: Colors.ERROR,
             kick: Colors.WARNING,
-            mute: Colors.YELLOW,
-            warn: Colors.YELLOW,
-            unmute: Colors.SUCCESS
-        };
-        
-        const actionEmojis = {
-            ban: '🔨',
-            kick: '👢',
-            mute: '🔇',
-            warn: '⚠️',
-            unmute: '🔊'
+            mute: Colors.MODERATION,
+            warn: Colors.WARNING,
+            unmute: Colors.SUCCESS,
+            clear: Colors.PRIMARY
         };
         
         return new EmbedBuilder()
             .setColor(actionColors[action] || Colors.MODERATION)
-            .setTitle(`${actionEmojis[action]} ${action.charAt(0).toUpperCase() + action.slice(1)} Action`)
+            .setTitle(`${action.charAt(0).toUpperCase() + action.slice(1)} Action`)
             .setThumbnail(target.displayAvatarURL())
             .setFooter({
                 text: `Moderated by ${moderator.tag} • ${guild.name}`,
@@ -132,17 +123,17 @@ class EmbedTemplates {
     // Leaderboard template
     static leaderboard(type, guild) {
         const typeData = {
-            xp: { emoji: '🎤', color: Colors.VOICE_XP },
-            time: { emoji: '⏱️', color: Colors.INFO },
-            level: { emoji: '🌟', color: Colors.YELLOW },
-            streak: { emoji: '🔥', color: Colors.ERROR }
+            xp: { color: Colors.VOICE_XP },
+            time: { color: Colors.PRIMARY },
+            level: { color: Colors.PURPLE },
+            streak: { color: Colors.LIGHT_PURPLE }
         };
         
-        const data = typeData[type] || { emoji: '📊', color: Colors.BLURPLE };
+        const data = typeData[type] || { color: Colors.PRIMARY };
         
         return new EmbedBuilder()
             .setColor(data.color)
-            .setTitle(`${data.emoji} ${type.charAt(0).toUpperCase() + type.slice(1)} Leaderboard`)
+            .setTitle(`${type.charAt(0).toUpperCase() + type.slice(1)} Leaderboard`)
             .setThumbnail(guild.iconURL())
             .setFooter({
                 text: `${guild.name} Leaderboard`,
@@ -155,10 +146,9 @@ class EmbedTemplates {
     static levelUp(user, level, guild) {
         return new EmbedBuilder()
             .setColor(Colors.SUCCESS)
-            .setTitle('🎉 Level Up!')
+            .setTitle('Level Up!')
             .setDescription(`Congratulations ${user}! You've reached **Level ${level}**!`)
             .setThumbnail(user.displayAvatarURL({ size: 128 }))
-            .setImage('https://media.giphy.com/media/3o7abKhOpu0NwenH3O/giphy.gif') // Optional celebration GIF
             .setFooter({
                 text: `Keep chatting to level up more! • ${guild.name}`,
                 iconURL: guild.iconURL()
@@ -169,18 +159,18 @@ class EmbedTemplates {
     // Welcome message template
     static welcome(user, guild) {
         return new EmbedBuilder()
-            .setColor(Colors.GREEN)
-            .setTitle(`🎉 Welcome to ${guild.name}!`)
+            .setColor(Colors.PRIMARY)
+            .setTitle(`Welcome to ${guild.name}!`)
             .setDescription(`Hello ${user}! We're excited to have you join our community!`)
             .setThumbnail(user.displayAvatarURL())
-            .setImage(guild.bannerURL({ size: 1024 })) // Server banner if available
+            .setImage(guild.bannerURL({ size: 1024 }))
             .addFields(
-                { name: '👥 Member Count', value: `${guild.memberCount}`, inline: true },
-                { name: '📅 Account Created', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
-                { name: '\u200B', value: '\u200B', inline: true }, // Spacer
+                { name: 'Member Count', value: `${guild.memberCount}`, inline: true },
+                { name: 'Account Created', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
+                { name: '\u200B', value: '\u200B', inline: true },
                 { 
-                    name: '🎯 What to do next?', 
-                    value: '• Read the rules\n• Introduce yourself\n• Join conversations\n• Have fun! 🎊', 
+                    name: 'What to do next?', 
+                    value: '• Read the rules\n• Introduce yourself\n• Join conversations\n• Have fun!', 
                     inline: false 
                 }
             )
@@ -194,8 +184,8 @@ class EmbedTemplates {
     // Statistics template with clean layout
     static statistics(title, stats, guild, user) {
         const embed = new EmbedBuilder()
-            .setColor(Colors.BLURPLE)
-            .setTitle(`📊 ${title}`)
+            .setColor(Colors.PRIMARY)
+            .setTitle(`${title}`)
             .setThumbnail(guild?.iconURL() || null)
             .setTimestamp();
         
@@ -223,6 +213,24 @@ class EmbedTemplates {
                 iconURL: user.displayAvatarURL()
             });
         }
+        
+        return embed;
+    }
+
+    // Generic embed creator
+    static createEmbed(options) {
+        const embed = new EmbedBuilder();
+        
+        if (options.title) embed.setTitle(options.title);
+        if (options.description) embed.setDescription(options.description);
+        if (options.color) embed.setColor(options.color);
+        if (options.thumbnail) embed.setThumbnail(options.thumbnail);
+        if (options.image) embed.setImage(options.image);
+        if (options.timestamp) embed.setTimestamp(options.timestamp);
+        if (options.url) embed.setURL(options.url);
+        if (options.author) embed.setAuthor(options.author);
+        if (options.footer) embed.setFooter(options.footer);
+        if (options.fields) embed.addFields(options.fields);
         
         return embed;
     }

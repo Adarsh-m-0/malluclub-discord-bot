@@ -3,12 +3,31 @@ const mongoose = require('mongoose');
 const userSchema = new mongoose.Schema({
     userId: {
         type: String,
-        required: true,
-        unique: true
+        required: true
+    },
+    guildId: {
+        type: String,
+        required: true
     },
     username: {
         type: String,
-        required: true
+        required: true,
+        default: 'Unknown User'
+    },
+    xp: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
+    level: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
+    voiceTime: {
+        type: Number,
+        default: 0,
+        min: 0
     },
     warnings: [{
         reason: String,
@@ -30,6 +49,15 @@ const userSchema = new mongoose.Schema({
         type: Date,
         default: Date.now
     }
+}, {
+    timestamps: true
 });
+
+// Create compound index for userId and guildId (unique combination)
+userSchema.index({ userId: 1, guildId: 1 }, { unique: true });
+
+// Additional indexes for performance
+userSchema.index({ guildId: 1, xp: -1 }); // For leaderboards
+userSchema.index({ guildId: 1, level: -1 }); // For level-based queries
 
 module.exports = mongoose.model('User', userSchema);

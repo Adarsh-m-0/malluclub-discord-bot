@@ -7,6 +7,8 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "deploy": "node deploy-commands.js",
+    "deploy:clean": "node cleanup-commands.js",
+    "clear-commands": "node clear-commands.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -18,20 +20,30 @@
     "pre-commit": "npm run lint:fix && npm run format && npm run test",
     "quick-start": "./quick-start.bat"
   },
-  "keywords": ["discord", "bot", "malluclub", "moderation", "entertainment", "community"],
+  "keywords": [
+    "discord",
+    "bot",
+    "malluclub",
+    "moderation",
+    "entertainment",
+    "community"
+  ],
   "author": "MalluClub",
   "license": "MIT",
   "dependencies": {
+    "axios": "^1.6.5",
     "discord.js": "^14.14.1",
     "dotenv": "^16.4.1",
     "mongoose": "^8.1.0",
-    "axios": "^1.6.5"
+    "node-cron": "^4.2.1",
+    "pino": "^8.17.2",
+    "pino-pretty": "^10.3.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2",
-    "jest": "^29.7.0",
     "eslint": "^8.56.0",
     "eslint-config-standard": "^17.1.0",
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2",
     "prettier": "^3.2.4"
   },
   "engines": {

@@ -3,6 +3,8 @@ const { readdirSync } = require('fs');
 const { join } = require('path');
 const mongoose = require('mongoose');
 const logger = require('./utils/logger');
+const XPManager = require('./utils/XPManager');
+const DailyRoleScheduler = require('./utils/DailyRoleScheduler');
 require('dotenv').config();
 
 // Initialize Discord client with necessary intents and partials
@@ -129,6 +131,13 @@ process.on('uncaughtException', error => {
 process.on('SIGINT', () => {
     logger.shutdown();
     logger.info('Received SIGINT - graceful shutdown initiated', { category: 'system' });
+    XPManager.clearAllTracking();
+    
+    // Stop daily role scheduler
+    if (client.dailyRoleScheduler) {
+        client.dailyRoleScheduler.stop();
+    }
+    
     client.destroy();
     mongoose.connection.close();
     process.exit(0);
@@ -137,6 +146,13 @@ process.on('SIGINT', () => {
 process.on('SIGTERM', () => {
     logger.shutdown();
     logger.info('Received SIGTERM - graceful shutdown initiated', { category: 'system' });
+    XPManager.clearAllTracking();
+    
+    // Stop daily role scheduler
+    if (client.dailyRoleScheduler) {
+        client.dailyRoleScheduler.stop();
+    }
+    
     client.destroy();
     mongoose.connection.close();
     process.exit(0);

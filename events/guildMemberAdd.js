@@ -1,107 +1,97 @@
-const { Events, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
-const User = require('../models/User');
-const { EmbedTemplates, Colors } = require('../utils/EmbedTemplates');
+const { Events, EmbedBuilder } = require('discord.js');
+const logger = require('../utils/logger');
+const { Colors } = require('../utils/EmbedTemplates');
+
+// Helper function to get ordinal numbers (1st, 2nd, 3rd, etc.)
+function getOrdinalNumber(num) {
+    const ones = num % 10;
+    const tens = Math.floor(num / 10) % 10;
+    
+    if (tens === 1) {
+        return `${num}th`;
+    }
+    
+    switch (ones) {
+        case 1: return `${num}st`;
+        case 2: return `${num}nd`;
+        case 3: return `${num}rd`;
+        default: return `${num}th`;
+    }
+}
 
 module.exports = {
     name: Events.GuildMemberAdd,
     async execute(member) {
-        const { guild, user } = member;
-        
         try {
-            // Save or update user to database
-            await User.findOneAndUpdate(
-                { userId: user.id },
-                {
-                    userId: user.id,
-                    username: user.username,
-                    joinedAt: new Date(),
-                    lastSeen: new Date()
-                },
-                { upsert: true, new: true }
-            );
-            
-            // Auto-assign role if configured
-            await handleAutoRoleAssignment(member);
-            
-            // Send welcome message
+            // Get welcome channel ID from environment variables
             const welcomeChannelId = process.env.WELCOME_CHANNEL_ID;
-            if (welcomeChannelId) {
-                const welcomeChannel = guild.channels.cache.get(welcomeChannelId);
-                if (welcomeChannel) {
-                    const welcomeEmbed = EmbedTemplates.welcome(user, guild);
-                    await welcomeChannel.send({ embeds: [welcomeEmbed] });
-                }
-            }
             
-            // Log to logging channel
-            const logChannelId = process.env.LOG_CHANNEL_ID;
-            if (logChannelId) {
-                const logChannel = guild.channels.cache.get(logChannelId);
-                if (logChannel) {
-                    const logEmbed = new EmbedBuilder()
-                        .setColor(Colors.SUCCESS)
-                        .setAuthor({ 
-                            name: '📥 Member Joined', 
-                            iconURL: guild.iconURL()
-                        })
-                        .setDescription(`${user} has joined the server`)
-                        .setThumbnail(user.displayAvatarURL({ dynamic: true }))
-                        .addFields(
-                            { name: '👤 User', value: `${user.tag}\n\`${user.id}\``, inline: true },
-                            { name: '📅 Account Created', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
-                            { name: '👥 Member Count', value: `${guild.memberCount}`, inline: true }
-                        )
-                        .setFooter({ text: `${guild.name} Member Log`, iconURL: guild.iconURL() })
-                        .setTimestamp();
-                    
-                    await logChannel.send({ embeds: [logEmbed] });
-                }
+            if (!welcomeChannelId) {
+                logger.warn('WELCOME_CHANNEL_ID not set in environment variables', {
+                    category: 'welcome',
+                    guild: member.guild.id
+                });
+                return;
             }
+
+            // Get the welcome channel
+            const welcomeChannel = member.guild.channels.cache.get(welcomeChannelId);
             
-        } catch (error) {
-            console.error('Error in guildMemberAdd event:', error);
-        }
-    },
-};
+            if (!welcomeChannel) {
+                logger.warn(`Welcome channel not found: ${welcomeChannelId}`, {
+                    category: 'welcome',
+                    guild: member.guild.id
+                });
+                return;
+            }
 
-async function handleAutoRoleAssignment(member) {
-    try {
-        if (process.env.AUTO_ROLE_ID) {
-            const autoRole = member.guild.roles.cache.get(process.env.AUTO_ROLE_ID);
-            if (autoRole) {
-                // Check bot permissions
-                const botMember = member.guild.members.me;
-                if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
-                    console.error('❌ Bot missing MANAGE_ROLES permission for auto-role');
-                    return;
-                }
-
-                // Check if bot can assign this role (hierarchy check)
-                if (autoRole.position < botMember.roles.highest.position) {
-                    // Check if role is managed
-                    if (autoRole.managed) {
-                        console.error(`❌ Cannot assign managed auto-role ${autoRole.name}`);
-                        return;
+            // Create modern welcome embed with clean styling
+            const welcomeEmbed = new EmbedBuilder()
+                .setAuthor({
+                    name: `Welcome to ${member.guild.name}!`,
+                    iconURL: member.guild.iconURL({ dynamic: true })
+                })
+                .setTitle(`👋 Hey ${member.user.username}!`)
+                .setDescription(`**Welcome to our community!**\n\nWe're excited to have you here. Feel free to explore, make friends, and join the conversation!\n\n\`\`\`\nYou are our ${getOrdinalNumber(member.guild.memberCount)} member!\nCheck out the channels and start chatting\nHave fun and enjoy your stay!\`\`\``)
+                .setColor(Colors.PRIMARY)
+                .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
+                .addFields(
+                    {
+                        name: '📊 Server Stats',
+                        value: `\`\`\`yaml\nMembers: ${member.guild.memberCount}\nChannels: ${member.guild.channels.cache.size}\`\`\``,
+                        inline: true
+                    },
+                    {
+                        name: '🎯 Quick Start',
+                        value: `\`\`\`\nRead the rules\nIntroduce yourself\nJoin voice channels\nEarn XP by chatting\`\`\``,
+                        inline: true
                     }
+                )
+                .setFooter({ 
+                    text: `Member #${member.guild.memberCount} • ${member.guild.name}`,
+                    iconURL: member.guild.iconURL({ dynamic: true })
+                })
+                .setTimestamp();
 
-                    await member.roles.add(autoRole, 'Auto-role assignment for new member');
-                    console.log(`✅ Assigned auto-role ${autoRole.name} to ${member.user.tag}`);
-                } else {
-                    console.error(`❌ Cannot assign auto-role ${autoRole.name} - role position (${autoRole.position}) >= bot highest role position (${botMember.roles.highest.position})`);
-                }
-            } else {
-                console.error('❌ Auto-role ID set but role not found');
-                process.env.AUTO_ROLE_ID = ''; // Clear invalid role ID
-            }
-        }
-    } catch (error) {
-        console.error('❌ Error assigning auto-role:', error);
-        if (error.code === 50013) {
-            console.error('Missing permissions to assign auto-role');
-        } else if (error.code === 50001) {
-            console.error('Access denied for auto-role assignment');
+            // Send welcome message
+            await welcomeChannel.send({ 
+                content: `${member}`, // Ping the user
+                embeds: [welcomeEmbed] 
+            });
+
+            logger.info(`Welcome message sent for ${member.user.tag}`, {
+                category: 'welcome',
+                user: member.user.id,
+                guild: member.guild.id
+            });
+
+        } catch (error) {
+            logger.logError(error, {
+                category: 'welcome',
+                context: 'Failed to send welcome message',
+                user: member.user.id,
+                guild: member.guild.id
+            });
         }
     }
-}
-
-
+};

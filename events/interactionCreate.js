@@ -71,6 +71,7 @@ module.exports = {
                 }
             } catch (error) {
                 logger.logError(error, {
+                    category: 'command',
                     context: `Error executing command: ${interaction.commandName}`,
                     command: interaction.commandName,
                     user: `${interaction.user.tag} (${interaction.user.id})`,
@@ -79,23 +80,14 @@ module.exports = {
                 });
                 
                 const errorMessage = {
-                    content: '❌ Something went wrong, the devs have been notified.',
+                    content: '❌ There was an error while executing this command!',
                     ephemeral: true
                 };
 
-                try {
-                    if (interaction.replied || interaction.deferred) {
-                        await interaction.followUp(errorMessage);
-                    } else {
-                        await interaction.reply(errorMessage);
-                    }
-                } catch (replyError) {
-                    logger.logError(replyError, {
-                        context: 'Failed to send error message to user',
-                        originalError: error.message,
-                        command: interaction.commandName,
-                        user: interaction.user.id
-                    });
+                if (interaction.replied || interaction.deferred) {
+                    await interaction.followUp(errorMessage);
+                } else {
+                    await interaction.reply(errorMessage);
                 }
             }
         }

@@ -1,10 +1,12 @@
 const { Events, ActivityType } = require('discord.js');
 const logger = require('../utils/logger');
+const XPManager = require('../utils/XPManager');
+const DailyRoleScheduler = require('../utils/DailyRoleScheduler');
 
 module.exports = {
     name: Events.ClientReady,
     once: true,
-    execute(client) {
+    async execute(client) {
         logger.discord(`${client.user.tag} is online and ready!`, {
             userId: client.user.id,
             guilds: client.guilds.cache.size,
@@ -20,6 +22,68 @@ module.exports = {
             category: 'startup',
             users: client.users.cache.size 
         });
+        
+        // Initialize voice tracking for users already in voice channels
+        try {
+            let voiceUsersCount = 0;
+            for (const guild of client.guilds.cache.values()) {
+                for (const channel of guild.channels.cache.values()) {
+                    if (channel.type === 2) { // Voice channel
+                        for (const member of channel.members.values()) {
+                            if (!member.user.bot) {
+                                // Get the voice state for proper initialization
+                                const voiceState = member.voice;
+                                
+                                // Track all users (including muted ones)
+                                await XPManager.startVoiceTracking(member.id, guild.id, channel, voiceState);
+                                voiceUsersCount++;
+                            }
+                        }
+                    }
+                }
+            }
+            logger.info(`Initialized XP tracking for ${voiceUsersCount} users in voice channels`, {
+                category: 'startup',
+                voiceUsers: voiceUsersCount
+            });
+        } catch (error) {
+            logger.logError(error, {
+                category: 'startup',
+                context: 'Failed to initialize voice XP tracking'
+            });
+        }
+        
+        // Initialize daily role scheduler
+        try {
+            const dailyRoleScheduler = new DailyRoleScheduler(client);
+            dailyRoleScheduler.start();
+            
+            // Store scheduler instance for cleanup
+            client.dailyRoleScheduler = dailyRoleScheduler;
+            
+            logger.info('Daily VC active role scheduler initialized', {
+                category: 'startup'
+            });
+
+            // Run initial role update for all guilds on startup
+            logger.info('Running initial VC active role update on startup...', {
+                category: 'startup'
+            });
+            
+            // Wait a bit for the bot to be fully ready
+            setTimeout(async () => {
+                await dailyRoleScheduler.runDailyUpdate();
+                logger.info('Initial VC active role update completed', {
+                    category: 'startup'
+                });
+            }, 5000); // 5 second delay
+            
+        } catch (error) {
+            logger.logError(error, {
+                category: 'startup',
+                context: 'Failed to initialize daily role scheduler'
+            });
+        }
         
         // Set bot status
         client.user.setActivity('Mallu Club | /help', { 
