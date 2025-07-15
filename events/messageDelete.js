@@ -14,8 +14,21 @@ module.exports = {
                 const logChannel = message.guild.channels.cache.get(logChannelId);
                 if (logChannel) {
                     // Handle case where author might be null (uncached message)
-                    const authorId = message.author?.id || 'UNKNOWN_USER';
-                    const authorName = message.author?.username || 'Unknown User';
+                    let authorId = message.author?.id || 'UNKNOWN_USER';
+                    let authorName = message.author?.username || 'Unknown User';
+                    
+                    // Try to fetch user information if author is null but we have a user ID from webhook or other sources
+                    if (!message.author && message.webhookId) {
+                        authorName = 'Webhook';
+                        authorId = message.webhookId;
+                    } else if (!message.author) {
+                        // Skip logging if we can't identify the author and it's not a meaningful deletion
+                        // This helps reduce "Unknown User" spam from system messages, embeds, etc.
+                        if (!message.content && message.attachments.size === 0 && message.embeds.length === 0) {
+                            return;
+                        }
+                        authorName = 'Unknown User (Uncached)';
+                    }
                     
                     // Create moderation log entry
                     const logEntry = new ModerationLog({
@@ -30,7 +43,8 @@ module.exports = {
                             messageId: message.id,
                             attachments: message.attachments.size > 0 ? message.attachments.map(att => att.name) : [],
                             embeds: message.embeds.length > 0 ? message.embeds.length : 0,
-                            authorWasNull: !message.author
+                            authorWasNull: !message.author,
+                            wasWebhook: !!message.webhookId
                         }
                     });
                     
@@ -52,6 +66,15 @@ module.exports = {
                         },
                         timestamp: new Date()
                     });
+                    
+                    // Add additional info if author was unknown
+                    if (!message.author) {
+                        logEmbed.addFields({ 
+                            name: 'ℹ️ Note', 
+                            value: 'Author information unavailable (message was not cached)', 
+                            inline: false 
+                        });
+                    }
                     
                     // Add attachment info if present
                     if (message.attachments.size > 0) {

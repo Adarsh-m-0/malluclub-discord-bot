@@ -26,7 +26,21 @@ const client = new Client({
         Partials.Reaction,
         Partials.User,
         Partials.GuildMember
-    ]
+    ],
+    // Increase message cache to reduce "Unknown User" in deletion logs
+    makeCache: (manager) => {
+        if (manager.name === 'MessageManager') {
+            return new Collection(); // Keep more messages in cache
+        }
+        return new Collection();
+    },
+    // Set message cache sweep interval
+    sweepers: {
+        messages: {
+            interval: 300, // 5 minutes
+            lifetime: 1800, // 30 minutes
+        },
+    }
 });
 
 // Collections for commands and cooldowns

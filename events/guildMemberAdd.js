@@ -2,6 +2,9 @@ const { Events, EmbedBuilder } = require('discord.js');
 const logger = require('../utils/logger');
 const { Colors } = require('../utils/EmbedTemplates');
 
+// Debounce map to prevent duplicate welcome messages
+const welcomeDebounce = new Map();
+
 // Helper function to get ordinal numbers (1st, 2nd, 3rd, etc.)
 function getOrdinalNumber(num) {
     const ones = num % 10;
@@ -23,6 +26,32 @@ module.exports = {
     name: Events.GuildMemberAdd,
     async execute(member) {
         try {
+            // Create debounce key for this member
+            const debounceKey = `${member.id}_${member.guild.id}`;
+            const now = Date.now();
+            
+            // Check if we've already sent a welcome message for this member recently (within 5 seconds)
+            const lastWelcomeTime = welcomeDebounce.get(debounceKey);
+            if (lastWelcomeTime && (now - lastWelcomeTime) < 5000) {
+                logger.info(`Skipping duplicate welcome message for ${member.user.tag}`, {
+                    category: 'welcome',
+                    user: member.user.id,
+                    guild: member.guild.id,
+                    reason: 'debounce'
+                });
+                return;
+            }
+            
+            // Update debounce map
+            welcomeDebounce.set(debounceKey, now);
+            
+            // Clean up old entries from debounce map (older than 30 seconds)
+            for (const [key, time] of welcomeDebounce.entries()) {
+                if (now - time > 30000) {
+                    welcomeDebounce.delete(key);
+                }
+            }
+            
             // Get welcome channel ID from environment variables
             const welcomeChannelId = process.env.WELCOME_CHANNEL_ID;
             

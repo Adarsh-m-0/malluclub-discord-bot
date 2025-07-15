@@ -86,21 +86,21 @@ class XPManager {
         
         // Check if it's an AFK channel
         if (voiceChannel.guild.afkChannelId === voiceChannel.id) {
-            console.log(`User ${userId} is in AFK channel, not awarding XP`);
+            // // // console.log(`User ${userId} is in AFK channel, not awarding XP`);
             return false;
         }
         
         // Check if user has speak permission
         const member = voiceChannel.guild.members.cache.get(userId);
         if (!member || !voiceChannel.permissionsFor(member).has('Speak')) {
-            console.log(`User ${userId} doesn't have speak permission in channel ${voiceChannel.name}`);
+            // // // console.log(`User ${userId} doesn't have speak permission in channel ${voiceChannel.name}`);
             return false;
         }
         
         // Check if there are enough users in the channel
         const nonBotMembers = voiceChannel.members.filter(member => !member.user.bot);
         if (nonBotMembers.size < this.minUsersForXP) {
-            console.log(`Not enough users in channel ${voiceChannel.name} (${nonBotMembers.size}/${this.minUsersForXP})`);
+            // // // console.log(`Not enough users in channel ${voiceChannel.name} (${nonBotMembers.size}/${this.minUsersForXP})`);
             return false;
         }
         
@@ -111,24 +111,24 @@ class XPManager {
     calculateXPAmount(voiceState) {
         // Highest priority: Camera on
         if (voiceState && voiceState.selfVideo) {
-            console.log(`User has camera on, awarding ${this.xpRates.camera} XP`);
+            // // console.log(`User has camera on, awarding ${this.xpRates.camera} XP`);
             return this.xpRates.camera;
         }
         
         // Second priority: Streaming
         if (voiceState && voiceState.streaming) {
-            console.log(`User is streaming, awarding ${this.xpRates.streaming} XP`);
+            // // console.log(`User is streaming, awarding ${this.xpRates.streaming} XP`);
             return this.xpRates.streaming;
         }
         
         // Third priority: Talking (unmuted)
         if (voiceState && !voiceState.mute && !voiceState.deaf && !voiceState.selfMute && !voiceState.selfDeaf) {
-            console.log(`User is talking (unmuted), awarding ${this.xpRates.talking} XP`);
+            // // console.log(`User is talking (unmuted), awarding ${this.xpRates.talking} XP`);
             return this.xpRates.talking;
         }
         
         // Default: Muted users
-        console.log(`User is muted, awarding ${this.xpRates.muted} XP`);
+        // // console.log(`User is muted, awarding ${this.xpRates.muted} XP`);
         return this.xpRates.muted;
     }
 
@@ -139,17 +139,17 @@ class XPManager {
             
             // Don't start if already tracking
             if (this.voiceUsers.has(key)) {
-                console.log(`Already tracking user ${userId} in guild ${guildId}`);
+                // // console.log(`Already tracking user ${userId} in guild ${guildId}`);
                 return;
             }
 
             // Validate voice channel
             if (voiceChannel && !(await this.isValidVoiceChannel(voiceChannel, userId))) {
-                console.log(`Voice channel ${voiceChannel.name} is not valid for XP earning`);
+                // // console.log(`Voice channel ${voiceChannel.name} is not valid for XP earning`);
                 return;
             }
 
-            console.log(`Starting XP tracking for user ${userId} in guild ${guildId}`);
+            // // console.log(`Starting XP tracking for user ${userId} in guild ${guildId}`);
 
             // Calculate initial XP amount
             const xpAmount = this.calculateXPAmount(voiceState);
@@ -184,7 +184,7 @@ class XPManager {
             const tracker = this.voiceUsers.get(key);
 
             if (tracker) {
-                console.log(`Stopping XP tracking for user ${userId} in guild ${guildId}`);
+                // // console.log(`Stopping XP tracking for user ${userId} in guild ${guildId}`);
                 
                 clearInterval(tracker.interval);
                 this.voiceUsers.delete(key);
@@ -197,12 +197,12 @@ class XPManager {
                     const minutesSpent = Math.floor(timeSpent / this.xpInterval);
                     
                     if (minutesSpent > 0) {
-                        console.log(`Awarding ${minutesSpent} XP for ${timeSpent}ms voice time`);
+                        // // console.log(`Awarding ${minutesSpent} XP for ${timeSpent}ms voice time`);
                         await this.awardVoiceXP(userId, guildId, minutesSpent);
                     }
                 }
             } else {
-                console.log(`No tracker found for user ${userId} in guild ${guildId}`);
+                // // console.log(`No tracker found for user ${userId} in guild ${guildId}`);
             }
         } catch (error) {
             console.error('Error stopping voice tracking:', error);
@@ -216,7 +216,7 @@ class XPManager {
             const tracker = this.voiceUsers.get(key);
 
             if (tracker) {
-                console.log(`Updating voice state for user ${userId} in guild ${guildId}`);
+                // // console.log(`Updating voice state for user ${userId} in guild ${guildId}`);
                 
                 // Update the voice state in the tracker
                 tracker.voiceState = newVoiceState;
@@ -225,14 +225,14 @@ class XPManager {
                 const newXPAmount = this.calculateXPAmount(newVoiceState);
                 tracker.currentXPAmount = newXPAmount;
                 
-                console.log(`Updated XP rate for user ${userId}: ${newXPAmount} XP/minute`);
+                // // console.log(`Updated XP rate for user ${userId}: ${newXPAmount} XP/minute`);
                 
                 // Update the tracker
                 this.voiceUsers.set(key, tracker);
                 
                 return true;
             } else {
-                console.log(`No tracker found for user ${userId} in guild ${guildId} to update voice state`);
+                // // console.log(`No tracker found for user ${userId} in guild ${guildId} to update voice state`);
                 return false;
             }
         } catch (error) {
@@ -253,13 +253,13 @@ class XPManager {
         try {
             // Check rate limiting
             if (this.isRateLimited(userId, guildId)) {
-                console.log(`User ${userId} is rate limited, not awarding XP`);
+                // // console.log(`User ${userId} is rate limited, not awarding XP`);
                 return null;
             }
 
             // Re-validate voice channel if provided
             if (voiceChannel && !(await this.isValidVoiceChannel(voiceChannel, userId))) {
-                console.log(`Voice channel no longer valid for XP earning, stopping tracking`);
+                // // console.log(`Voice channel no longer valid for XP earning, stopping tracking`);
                 await this.stopVoiceTracking(userId, guildId);
                 return null;
             }
@@ -279,7 +279,7 @@ class XPManager {
 
             const totalXP = xpAmount * minutes;
             
-            console.log(`Awarding ${totalXP} XP to user ${userId} for ${minutes} minutes of voice activity`);
+            // // console.log(`Awarding ${totalXP} XP to user ${userId} for ${minutes} minutes of voice activity`);
             
             // Update rate limit
             this.updateRateLimit(userId, guildId, totalXP);
@@ -287,7 +287,7 @@ class XPManager {
             const result = await this.addXP(userId, guildId, totalXP, minutes);
             
             if (result && result.leveledUp) {
-                console.log(`User ${userId} leveled up from ${result.oldLevel} to ${result.newLevel}!`);
+                // // console.log(`User ${userId} leveled up from ${result.oldLevel} to ${result.newLevel}!`);
             }
             
             return result;
@@ -333,7 +333,7 @@ class XPManager {
                 await result.save();
             }
 
-            console.log(`User ${userId}: XP ${result.xp - xpAmount} -> ${result.xp}, Level ${oldLevel} -> ${result.level}`);
+            // // console.log(`User ${userId}: XP ${result.xp - xpAmount} -> ${result.xp}, Level ${oldLevel} -> ${result.level}`);
 
             // Update daily voice activity for VC active system
             if (voiceMinutes > 0) {
@@ -365,7 +365,7 @@ class XPManager {
             // If it's still a duplicate key error, try to find and update the existing user
             if (error.code === 11000) {
                 try {
-                    console.log(`Attempting to update existing user ${userId} in guild ${guildId}`);
+                    // // console.log(`Attempting to update existing user ${userId} in guild ${guildId}`);
                     const existingUser = await User.findOne({ userId, guildId });
                     
                     if (existingUser) {
@@ -379,7 +379,7 @@ class XPManager {
                         
                         await existingUser.save();
                         
-                        console.log(`User ${userId}: XP ${oldXP} -> ${existingUser.xp}, Level ${oldLevel} -> ${existingUser.level}`);
+                        // // console.log(`User ${userId}: XP ${oldXP} -> ${existingUser.xp}, Level ${oldLevel} -> ${existingUser.level}`);
                         
                         return {
                             xpGained: xpAmount,
@@ -582,12 +582,12 @@ class XPManager {
 
     // Clear all tracking (for shutdown)
     clearAllTracking() {
-        console.log('Clearing all voice tracking...');
+        // // console.log('Clearing all voice tracking...');
         for (const [key, tracker] of this.voiceUsers) {
             clearInterval(tracker.interval);
         }
         this.voiceUsers.clear();
-        console.log('All voice tracking cleared');
+        // // console.log('All voice tracking cleared');
     }
 
     // Clean up old rate limit data

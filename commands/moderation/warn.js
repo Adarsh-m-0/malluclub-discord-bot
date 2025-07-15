@@ -190,7 +190,7 @@ module.exports = {
                 
                 await target.send({ embeds: [dmEmbed] });
             } catch (error) {
-                console.log('Could not send DM to user');
+                // console.log('Could not send DM to user');
             }
             
             // Success response

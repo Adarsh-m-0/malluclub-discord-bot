@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+// console.log('Loading DailyVoiceActivity model...');
+
 const dailyVoiceActivitySchema = new mongoose.Schema({
     userId: {
         type: String,
@@ -151,4 +153,10 @@ dailyVoiceActivitySchema.statics.calculateStreak = async function(userId, guildI
     return streak;
 };
 
-module.exports = mongoose.model('DailyVoiceActivity', dailyVoiceActivitySchema);
+const DailyVoiceActivity = mongoose.model('DailyVoiceActivity', dailyVoiceActivitySchema);
+
+// console.log('DailyVoiceActivity model created successfully');
+// console.log('Model type:', typeof DailyVoiceActivity);
+// console.log('Model name:', DailyVoiceActivity.modelName);
+
+module.exports = DailyVoiceActivity;
