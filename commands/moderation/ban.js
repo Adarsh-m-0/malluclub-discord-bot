@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const ModerationLog = require('../../models/ModerationLog');
+const { EmbedTemplates, Colors } = require('../../utils/EmbedTemplates');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -56,7 +57,7 @@ module.exports = {
             if (member) {
                 try {
                     const dmEmbed = new EmbedBuilder()
-                        .setColor(0xFF4444) // Red for ban
+                        .setColor(Colors.ERROR)
                         .setAuthor({ 
                             name: '🔨 Moderation Action: Ban', 
                             iconURL: interaction.guild.iconURL()
@@ -84,7 +85,7 @@ module.exports = {
             
             // Success embed
             const successEmbed = new EmbedBuilder()
-                .setColor(0x00FF00) // Green for success
+                .setColor(Colors.SUCCESS)
                 .setAuthor({ 
                     name: '✅ Moderation Action Completed', 
                     iconURL: interaction.client.user.displayAvatarURL()
@@ -99,7 +100,7 @@ module.exports = {
                     { name: '📊 Status', value: '✅ Ban Applied Successfully', inline: true }
                 )
                 .setFooter({ 
-                    text: `Action performed by ${interaction.user.tag} • MalluClub Bot`, 
+                    text: `Action performed by ${interaction.user.tag} • ${interaction.guild.name}`, 
                     iconURL: interaction.user.displayAvatarURL() 
                 })
                 .setTimestamp();
@@ -112,7 +113,7 @@ module.exports = {
                 const logChannel = interaction.guild.channels.cache.get(logChannelId);
                 if (logChannel) {
                     const logEmbed = new EmbedBuilder()
-                        .setColor(0xFF4444) // Red for ban log
+                        .setColor(Colors.MODERATION)
                         .setAuthor({ 
                             name: '🔨 Ban Action Logged', 
                             iconURL: interaction.guild.iconURL()

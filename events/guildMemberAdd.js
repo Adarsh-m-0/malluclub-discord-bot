@@ -1,5 +1,6 @@
 const { Events, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const User = require('../models/User');
+const { EmbedTemplates, Colors } = require('../utils/EmbedTemplates');
 
 module.exports = {
     name: Events.GuildMemberAdd,
@@ -27,19 +28,7 @@ module.exports = {
             if (welcomeChannelId) {
                 const welcomeChannel = guild.channels.cache.get(welcomeChannelId);
                 if (welcomeChannel) {
-                    const welcomeEmbed = new EmbedBuilder()
-                        .setColor('#00ff00')
-                        .setTitle('🎉 Welcome to Mallu Club!')
-                        .setDescription(`Hello ${user}! Welcome to our community! 🌟\n\nWe're excited to have you join our family. Feel free to explore the channels and connect with fellow members!`)
-                        .setThumbnail(user.displayAvatarURL({ dynamic: true }))
-                        .addFields(
-                            { name: '👥 Member Count', value: `${guild.memberCount}`, inline: true },
-                            { name: '📅 Account Created', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
-                            { name: '🎯 What to do next?', value: '• Check out the rules\n• Introduce yourself\n• Join conversations\n• Have fun! 🎊', inline: false }
-                        )
-                        .setFooter({ text: 'Mallu Club', iconURL: guild.iconURL() })
-                        .setTimestamp();
-                    
+                    const welcomeEmbed = EmbedTemplates.welcome(user, guild);
                     await welcomeChannel.send({ embeds: [welcomeEmbed] });
                 }
             }
@@ -50,17 +39,19 @@ module.exports = {
                 const logChannel = guild.channels.cache.get(logChannelId);
                 if (logChannel) {
                     const logEmbed = new EmbedBuilder()
-                        .setColor('#00ff00')
-                        .setTitle('📥 Member Joined')
+                        .setColor(Colors.SUCCESS)
+                        .setAuthor({ 
+                            name: '📥 Member Joined', 
+                            iconURL: guild.iconURL()
+                        })
                         .setDescription(`${user} has joined the server`)
                         .setThumbnail(user.displayAvatarURL({ dynamic: true }))
                         .addFields(
-                            { name: 'User', value: `${user.tag}`, inline: true },
-                            { name: 'ID', value: user.id, inline: true },
-                            { name: 'Account Created', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
-                            { name: 'Member Count', value: `${guild.memberCount}`, inline: true }
+                            { name: '👤 User', value: `${user.tag}\n\`${user.id}\``, inline: true },
+                            { name: '📅 Account Created', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
+                            { name: '👥 Member Count', value: `${guild.memberCount}`, inline: true }
                         )
-                        .setFooter({ text: 'Member Joined' })
+                        .setFooter({ text: `${guild.name} Member Log`, iconURL: guild.iconURL() })
                         .setTimestamp();
                     
                     await logChannel.send({ embeds: [logEmbed] });
