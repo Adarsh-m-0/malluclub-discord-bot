@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const logger = require('../../utils/logger');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -10,142 +11,251 @@ module.exports = {
                 .setRequired(false)),
     
     async execute(interaction) {
-        const commandName = interaction.options.getString('command');
-        
-        if (commandName) {
-            const command = interaction.client.commands.get(commandName);
-            if (!command) {
-                return interaction.reply({ 
-                    content: `❌ Command \`${commandName}\` not found.`, 
-                    ephemeral: true
-                });
-            }
+        try {
+            const commandName = interaction.options.getString('command');
             
-            const commandHelp = new EmbedBuilder()
-                .setColor(0x5865F2)
+            if (commandName) {
+                // Show help for specific command
+                const command = interaction.client.commands.get(commandName);
+                if (!command) {
+                    return interaction.reply({ content: `❌ Command \`${commandName}\` not found.`, ephemeral: true });
+                }
+                
+                const commandHelp = new EmbedBuilder()
+                    .setColor(0x5865F2) // Discord Blurple
+                    .setAuthor({ 
+                        name: `Command Help: /${command.data.name}`, 
+                        iconURL: interaction.client.user.displayAvatarURL(),
+                        url: null
+                    })
+                    .setDescription(`📖 **${command.data.description}**`)
+                    .setThumbnail(interaction.client.user.displayAvatarURL())
+                    .addFields(
+                        { 
+                            name: '⚡ Usage', 
+                            value: `\`\`\`/${command.data.name}\`\`\``, 
+                            inline: true 
+                        },
+                        { 
+                            name: '⏱️ Cooldown', 
+                            value: `\`${command.cooldown || 3} seconds\``, 
+                            inline: true 
+                        },
+                        {
+                            name: '🔗 Category',
+                            value: `\`${getCategoryFromCommand(command.data.name)}\``,
+                            inline: true
+                        }
+                    )
+                    .setFooter({ 
+                        text: `Requested by ${interaction.user.tag} • MalluClub Bot`, 
+                        iconURL: interaction.user.displayAvatarURL() 
+                    })
+                    .setTimestamp();
+                
+                if (command.data.options && command.data.options.length > 0) {
+                    const options = command.data.options.map(option => {
+                        const required = option.required ? '🔸 **Required**' : '🔹 *Optional*';
+                        return `${required} \`${option.name}\`\n└ ${option.description}`;
+                    }).join('\n\n');
+                    
+                    commandHelp.addFields({ 
+                        name: '⚙️ Command Options', 
+                        value: options, 
+                        inline: false 
+                    });
+                }
+                
+                return interaction.reply({ embeds: [commandHelp], ephemeral: true });
+            }
+        
+            // Show general help with select menu
+            const helpEmbed = new EmbedBuilder()
+                .setColor(0x5865F2) // Discord Blurple
                 .setAuthor({ 
-                    name: `Command Help: /${command.data.name}`, 
+                    name: 'MalluClub Bot - Command Center', 
                     iconURL: interaction.client.user.displayAvatarURL()
                 })
-                .setDescription(`📖 **${command.data.description}**`)
+                .setDescription(`👋 **Welcome to MalluClub Bot!**\n\n🤖 I'm a comprehensive Discord bot designed to help manage your server with powerful moderation tools, fun entertainment features, and useful information commands.\n\n✨ Use the dropdown menu below to explore different command categories!`)
+                .setThumbnail(interaction.client.user.displayAvatarURL())
                 .addFields(
                     { 
-                        name: '⚡ Usage', 
-                        value: `\`/${command.data.name}\``, 
+                        name: '📊 Bot Statistics', 
+                        value: `🔢 **Commands:** ${interaction.client.commands.size}\n⏰ **Uptime:** <t:${Math.floor((Date.now() - interaction.client.readyTimestamp) / 1000)}:R>\n🌐 **Servers:** ${interaction.client.guilds.cache.size}\n👥 **Users:** ${interaction.client.users.cache.size}`, 
                         inline: true 
                     },
                     { 
-                        name: '⏱️ Cooldown', 
-                        value: `${command.cooldown || 3} seconds`, 
+                        name: '🚀 Quick Start', 
+                        value: '📋 Browse categories below\n🔍 Use `/help <command>`\n⚡ All commands use slash system\n🛡️ Permissions auto-checked', 
+                        inline: true 
+                    },
+                    { 
+                        name: '⭐ Key Features', 
+                        value: '🛡️ Advanced moderation\n🎮 Fun entertainment\n📊 Server insights\n🤖 Auto-moderation\n📝 Comprehensive logging', 
                         inline: true 
                     }
                 )
                 .setFooter({ 
-                    text: `Requested by ${interaction.user.tag}`, 
+                    text: `Requested by ${interaction.user.tag} • MalluClub Bot v2.0`, 
                     iconURL: interaction.user.displayAvatarURL() 
                 })
                 .setTimestamp();
+
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId('help_category')
+                .setPlaceholder('📋 Select a command category to view')
+                .addOptions(
+                    {
+                        label: 'Moderation Commands',
+                        description: 'Server management and moderation tools',
+                        value: 'moderation',
+                        emoji: '🛡️'
+                    },
+                    {
+                        label: 'Information Commands',
+                        description: 'User and server information utilities',
+                        value: 'info',
+                        emoji: '📊'
+                    },
+                    {
+                        label: 'Fun Commands',
+                        description: 'Entertainment and community engagement',
+                        value: 'fun',
+                        emoji: '🎮'
+                    }
+                );
             
-            return interaction.reply({ embeds: [commandHelp] });
+            const row = new ActionRowBuilder().addComponents(selectMenu);
+            
+            await interaction.reply({ embeds: [helpEmbed], components: [row], ephemeral: true });
+            
+            // Handle select menu interaction
+            const filter = i => i.customId === 'help_category' && i.user.id === interaction.user.id;
+            const collector = interaction.channel.createMessageComponentCollector({ filter, time: 60000 });
+            
+            collector.on('collect', async i => {
+                try {
+                    const category = i.values[0];
+                    const categoryEmbed = getCategoryHelp(category, interaction.client);
+                    
+                    await i.update({ embeds: [categoryEmbed], components: [row] });
+                } catch (error) {
+                    logger.logError(error, {
+                        context: 'Help category selection',
+                        userId: i.user.id,
+                        category: i.values[0]
+                    });
+                }
+            });
+            
+            collector.on('end', async () => {
+                try {
+                    selectMenu.setDisabled(true);
+                    const disabledRow = new ActionRowBuilder().addComponents(selectMenu);
+                    await interaction.editReply({ components: [disabledRow] });
+                } catch (error) {
+                    // Ignore errors when disabling components (interaction may have expired)
+                }
+            });
+            
+        } catch (error) {
+            logger.logError(error, {
+                context: 'Help command execution',
+                userId: interaction.user.id,
+                commandName: interaction.options.getString('command')
+            });
+            
+            const errorMessage = {
+                content: '❌ Something went wrong, the devs have been notified.',
+                ephemeral: true
+            };
+            
+            if (interaction.replied || interaction.deferred) {
+                await interaction.followUp(errorMessage);
+            } else {
+                await interaction.reply(errorMessage);
+            }
         }
-        
-        const helpEmbed = new EmbedBuilder()
-            .setColor(0x5865F2)
-            .setTitle('🤖 MalluClub Bot - Help Center')
-            .setDescription('Welcome to MalluClub Bot! Use the menu below to explore commands.')
-            .addFields(
-                { 
-                    name: '📊 Statistics', 
-                    value: `Commands: ${interaction.client.commands.size}\nServers: ${interaction.client.guilds.cache.size}`, 
-                    inline: true 
-                }
-            )
-            .setFooter({ 
-                text: `Requested by ${interaction.user.tag}`, 
-                iconURL: interaction.user.displayAvatarURL() 
-            })
-            .setTimestamp();
-        
-        const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId('help_category')
-            .setPlaceholder('Select a command category')
-            .addOptions([
-                {
-                    label: 'Moderation',
-                    description: 'Server moderation tools',
-                    value: 'moderation',
-                    emoji: '🛡️'
-                },
-                {
-                    label: 'Information', 
-                    description: 'Server and user info',
-                    value: 'info',
-                    emoji: '📊'
-                },
-                {
-                    label: 'Fun',
-                    description: 'Entertainment commands',
-                    value: 'fun',
-                    emoji: '🎮'
-                }
-            ]);
-        
-        const row = new ActionRowBuilder().addComponents(selectMenu);
-        
-        await interaction.reply({ embeds: [helpEmbed], components: [row] });
-        
-        const filter = i => i.customId === 'help_category' && i.user.id === interaction.user.id;
-        const collector = interaction.channel.createMessageComponentCollector({ filter, time: 60000 });
-        
-        collector.on('collect', async i => {
-            const category = i.values[0];
-            const categoryEmbed = getCategoryHelp(category, interaction.client);
-            await i.update({ embeds: [categoryEmbed], components: [row] });
-        });
-        
-        collector.on('end', async () => {
-            selectMenu.setDisabled(true);
-            const disabledRow = new ActionRowBuilder().addComponents(selectMenu);
-            await interaction.editReply({ components: [disabledRow] }).catch(() => {});
-        });
     },
 };
 
+function getCategoryFromCommand(commandName) {
+    const categories = {
+        'kick': 'Moderation', 'ban': 'Moderation', 'mute': 'Moderation', 
+        'unmute': 'Moderation', 'warn': 'Moderation', 'clear': 'Moderation', 'modlogs': 'Moderation',
+        'ping': 'Information', 'userinfo': 'Information', 'serverinfo': 'Information',
+        'meme': 'Fun', 'joke': 'Fun', 'avatar': 'Fun',
+        'help': 'General'
+    };
+    return categories[commandName] || 'Other';
+}
+
 function getCategoryHelp(category, client) {
     const commands = client.commands.filter(cmd => {
-        const cmdName = cmd.data.name;
+        const cmdPath = cmd.data.name;
         switch (category) {
             case 'moderation':
-                return ['kick', 'ban', 'mute', 'unmute', 'warn', 'clear', 'modlogs', 'voiceadmin', 'autorole', 'role', 'setup', 'restoreroles'].includes(cmdName);
+                return ['kick', 'ban', 'mute', 'unmute', 'warn', 'clear', 'modlogs'].includes(cmdPath);
             case 'info':
-                return ['ping', 'userinfo', 'serverinfo', 'voicestats', 'voiceleaderboard'].includes(cmdName);
+                return ['ping', 'userinfo', 'serverinfo'].includes(cmdPath);
             case 'fun':
-                return ['meme', 'joke', 'avatar'].includes(cmdName);
+                return ['meme', 'joke', 'avatar'].includes(cmdPath);
             default:
                 return false;
         }
     });
     
+    const categoryTitles = {
+        moderation: '🛡️ Moderation & Security Commands',
+        info: '📊 Information & Utility Commands',
+        fun: '🎮 Entertainment & Fun Commands'
+    };
+    
+    const categoryDescriptions = {
+        moderation: 'Powerful tools to keep your server safe, organized, and well-moderated. These commands require appropriate permissions.',
+        info: 'Comprehensive information commands to get details about users, server statistics, and bot performance.',
+        fun: 'Engaging entertainment features to keep your community active and entertained with memes, jokes, and interactive content.'
+    };
+    
     const embed = new EmbedBuilder()
         .setColor(0x5865F2)
-        .setTitle(`${category.charAt(0).toUpperCase() + category.slice(1)} Commands`)
-        .setDescription(`Available ${category} commands:`)
+        .setAuthor({ 
+            name: categoryTitles[category], 
+            iconURL: client.user.displayAvatarURL()
+        })
+        .setDescription(categoryDescriptions[category])
+        .setThumbnail(client.user.displayAvatarURL())
+        .setFooter({ text: `${categoryTitles[category]} • MalluClub Bot v2.0`, iconURL: client.user.displayAvatarURL() })
         .setTimestamp();
     
     const commandList = commands.map(cmd => {
-        return `**/${cmd.data.name}** - ${cmd.data.description}`;
-    }).join('\n');
+        const cooldown = cmd.cooldown ? ` (${cmd.cooldown}s cooldown)` : ' (3s cooldown)';
+        return `**/${cmd.data.name}**${cooldown}\n└ ${cmd.data.description}`;
+    }).join('\n\n');
     
     if (commandList) {
         embed.addFields({ 
-            name: 'Commands', 
+            name: `📋 Available Commands (${commands.size} total)`, 
             value: commandList, 
+            inline: false 
+        });
+        
+        // Add usage tips for each category
+        const usageTips = {
+            moderation: '💡 **Permission Required:** Most moderation commands require specific Discord permissions. Make sure the bot has the necessary roles and permissions in your server.',
+            info: '💡 **Usage Tip:** These commands work in any channel and provide real-time information about your server and its members.',
+            fun: '💡 **Entertainment:** These commands help keep your community engaged. Some commands may fetch content from external APIs.'
+        };
+        
+        embed.addFields({ 
+            name: 'ℹ️ Additional Information', 
+            value: usageTips[category], 
             inline: false 
         });
     } else {
         embed.addFields({ 
-            name: 'No Commands', 
-            value: 'No commands found in this category.', 
+            name: '❌ No Commands Available', 
+            value: 'No commands were found in this category. This may indicate a configuration issue.', 
             inline: false 
         });
     }
