@@ -14,8 +14,42 @@ This guide will walk you through deploying your MalluClub Discord Bot on a Conta
 - Domain name (optional, for monitoring dashboard)
 - Discord Bot Token
 - MongoDB Atlas connection string
+- GitHub repository access
 
-## 🖥️ Step 1: Server Setup
+## 🖥️ Quick Setup (Automated)
+
+### Step 1: Run the Setup Script
+```bash
+# Connect to your Contabo server
+ssh root@your-server-ip
+
+# Download and run the setup script
+wget https://raw.githubusercontent.com/Adarsh-m-0/malluclub-discord-bot/main/setup-server.sh
+chmod +x setup-server.sh
+./setup-server.sh
+```
+
+### Step 2: Configure Environment Variables
+```bash
+# Edit the .env file with your actual values
+nano /opt/malluclub-bot/.env
+```
+
+### Step 3: Deploy and Start
+```bash
+cd /opt/malluclub-bot
+
+# Deploy Discord commands
+node deploy-commands-new.js
+
+# Start the bot
+pm2 start ecosystem.config.js
+
+# Check status
+pm2 status
+```
+
+## 🔧 Manual Setup (Alternative)
 
 ### Connect to Your Contabo Server
 ```bash
@@ -381,6 +415,163 @@ mongoose.connect(process.env.MONGODB_URI)
 .then(() => console.log('✅ DB Connected'))
 .catch(err => console.error('❌ DB Error:', err));
 "
+```
+
+## 🚨 Troubleshooting Deployment Failures
+
+### Common GitHub Actions Deployment Errors
+
+#### 1. "All jobs have failed" Email
+This usually indicates issues with the deployment workflow. Check the following:
+
+```bash
+# Connect to your server and check
+ssh root@your-server-ip
+
+# Run health check
+cd /opt/malluclub-bot
+./health-check.sh
+
+# Check PM2 status
+pm2 status
+pm2 logs malluclub-bot --lines 50
+```
+
+#### 2. Bot Directory Not Found
+```bash
+# Create the directory structure
+mkdir -p /opt/malluclub-bot
+cd /opt
+
+# Clone repository manually
+git clone https://github.com/Adarsh-m-0/malluclub-discord-bot.git malluclub-bot
+cd malluclub-bot
+npm install --production
+```
+
+#### 3. Environment Variables Missing
+```bash
+# Check if .env exists
+ls -la /opt/malluclub-bot/.env
+
+# If missing, create it
+nano /opt/malluclub-bot/.env
+# Add your Discord token, MongoDB URI, etc.
+```
+
+#### 4. Command Deployment Failures
+```bash
+cd /opt/malluclub-bot
+
+# Test command deployment manually
+node deploy-commands-new.js
+
+# Check for syntax errors
+node -c index.js
+node -c deploy-commands-new.js
+```
+
+#### 5. PM2 Process Issues
+```bash
+# Remove old PM2 processes
+pm2 delete all
+
+# Start fresh
+pm2 start ecosystem.config.js
+
+# Save PM2 configuration
+pm2 save
+```
+
+#### 6. MongoDB Connection Issues
+```bash
+# Test MongoDB connection
+cd /opt/malluclub-bot
+node -e "
+const mongoose = require('mongoose');
+require('dotenv').config();
+console.log('Testing MongoDB connection...');
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('✅ Connected'))
+  .catch(err => console.log('❌ Error:', err.message));
+"
+```
+
+#### 7. Discord API Issues
+```bash
+# Check Discord token
+cd /opt/malluclub-bot
+node -e "
+require('dotenv').config();
+console.log('Token exists:', !!process.env.DISCORD_TOKEN);
+console.log('Client ID exists:', !!process.env.CLIENT_ID);
+console.log('Guild ID exists:', !!process.env.GUILD_ID);
+"
+```
+
+### GitHub Secrets Configuration
+
+Make sure these secrets are set in your GitHub repository:
+
+1. Go to your repository on GitHub
+2. Settings → Secrets and variables → Actions
+3. Add these secrets:
+
+```
+CONTABO_HOST: your-server-ip-address
+CONTABO_USERNAME: root
+CONTABO_SSH_KEY: your-private-ssh-key-content
+```
+
+### Manual Deployment (If Auto-Deploy Fails)
+
+```bash
+# Connect to server
+ssh root@your-server-ip
+
+# Navigate to bot directory
+cd /opt/malluclub-discord-bot
+
+# Stop bot
+pm2 stop malluclub-bot
+
+# Pull latest changes
+git pull origin main
+
+# Install dependencies
+npm install --production
+
+# Deploy commands
+node deploy-commands-new.js
+
+# Start bot
+pm2 start ecosystem.config.js
+
+# Check status
+pm2 status
+pm2 logs malluclub-bot --lines 10
+```
+
+### Emergency Recovery
+
+If everything fails, run the full setup again:
+
+```bash
+# Backup current setup
+mv /opt/malluclub-bot /opt/malluclub-bot-backup-$(date +%Y%m%d)
+
+# Run fresh setup
+wget https://raw.githubusercontent.com/Adarsh-m-0/malluclub-discord-bot/main/setup-server.sh
+chmod +x setup-server.sh
+./setup-server.sh
+
+# Restore .env file
+cp /opt/malluclub-bot-backup-*/. env /opt/malluclub-bot/.env
+
+# Deploy and start
+cd /opt/malluclub-bot
+node deploy-commands-new.js
+pm2 start ecosystem.config.js
 ```
 
 ## 📱 Step 11: SSL Certificate (Optional)

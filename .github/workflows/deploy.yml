@@ -3,8 +3,6 @@ name: Deploy to Contabo Server
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 jobs:
   deploy:
@@ -21,24 +19,52 @@ jobs:
         username: ${{ secrets.CONTABO_USERNAME }}
         key: ${{ secrets.CONTABO_SSH_KEY }}
         script: |
-          cd /opt/malluclub-bot
+          cd /opt/malluclub-bot || { echo "❌ Bot directory not found"; exit 1; }
           
-          # Stop the bot
-          pm2 stop malluclub-bot || true
+          echo "🔄 Starting deployment process..."
+          
+          # Stop the bot gracefully
+          echo "⏹️ Stopping bot..."
+          pm2 stop malluclub-bot || echo "⚠️ Bot was not running"
+          
+          # Backup current version
+          echo "💾 Creating backup..."
+          cp -r . ../malluclub-bot-backup-$(date +%Y%m%d-%H%M%S) || true
           
           # Pull latest changes
+          echo "📥 Pulling latest changes..."
+          git stash || true
           git pull origin main
           
-          # Install any new dependencies
+          # Install/update dependencies
+          echo "📦 Installing dependencies..."
           npm install --production
           
-          # Deploy new commands
-          node deploy-commands.js
+          # Check for .env file
+          if [ ! -f ".env" ]; then
+            echo "❌ .env file not found! Please create it first."
+            exit 1
+          fi
+          
+          # Verify bot files
+          echo "🔍 Verifying bot files..."
+          node -c index.js || { echo "❌ Bot file has syntax errors"; exit 1; }
+          node -c deploy-commands-new.js || { echo "❌ Deploy script has syntax errors"; exit 1; }
+          
+          # Deploy commands
+          echo "🚀 Deploying commands..."
+          node deploy-commands-new.js || { echo "❌ Command deployment failed"; exit 1; }
           
           # Start the bot
-          pm2 start malluclub-bot
+          echo "▶️ Starting bot..."
+          pm2 start ecosystem.config.js || pm2 start index.js --name malluclub-bot
           
-          # Show status
+          # Wait a moment for startup
+          sleep 3
+          
+          # Check status
+          echo "📊 Checking bot status..."
           pm2 status malluclub-bot
+          pm2 logs malluclub-bot --lines 10
           
-          echo "✅ Bot updated successfully!"
+          echo "✅ Deployment completed successfully!"
