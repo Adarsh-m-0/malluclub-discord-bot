@@ -1,4 +1,4 @@
-const { Events, EmbedBuilder } = require('discord.js');
+const { Events, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const User = require('../models/User');
 const UserRoles = require('../models/UserRoles');
 
@@ -37,7 +37,7 @@ module.exports = {
                     const welcomeEmbed = new EmbedBuilder()
                         .setColor('#00ff00')
                         .setTitle('🎉 Welcome to Mallu Club!')
-                        .setDescription(`Hello ${user}! Welcome to our community! �\n\nWe're excited to have you join our family. Feel free to explore the channels and connect with fellow members!`)
+                        .setDescription(`Hello ${user}! Welcome to our community! 🌟\n\nWe're excited to have you join our family. Feel free to explore the channels and connect with fellow members!`)
                         .setThumbnail(user.displayAvatarURL({ dynamic: true }))
                         .addFields(
                             { name: '👥 Member Count', value: `${guild.memberCount}`, inline: true },
