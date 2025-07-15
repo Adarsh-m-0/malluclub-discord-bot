@@ -42,6 +42,15 @@ module.exports = {
             return interaction.reply({ content: '❌ I cannot mute this member.', ephemeral: true });
         }
         
+        // Check if member is already muted
+        const existingMuteRole = interaction.guild.roles.cache.find(role => role.name === 'Muted');
+        const hasTimeout = member.isCommunicationDisabled();
+        const hasMuteRole = existingMuteRole && member.roles.cache.has(existingMuteRole.id);
+        
+        if (hasTimeout || hasMuteRole) {
+            return interaction.reply({ content: '❌ This member is already muted.', ephemeral: true });
+        }
+        
         // Parse duration
         const durationMs = parseDuration(duration);
         if (!durationMs) {
@@ -55,18 +64,26 @@ module.exports = {
         try {
             const muteUntil = new Date(Date.now() + durationMs);
             
-            // Get or create mute role
-            let muteRole = interaction.guild.roles.cache.find(role => role.name === 'Muted');
-            if (!muteRole) {
-                muteRole = await createMuteRole(interaction.guild);
-            }
-            
-            // Apply timeout (Discord's built-in mute)
+            // Primary method: Use Discord's built-in timeout (more reliable)
             await member.timeout(durationMs, reason);
             
-            // Also apply the mute role for additional control
+            // Backup method: Also apply mute role for additional control and longer durations
+            let muteRole = interaction.guild.roles.cache.find(role => role.name === 'Muted');
+            if (!muteRole) {
+                try {
+                    muteRole = await createMuteRole(interaction.guild);
+                } catch (roleError) {
+                    console.log('Could not create mute role, using timeout only');
+                }
+            }
+            
+            // Add mute role as backup (especially useful for longer mutes)
             if (muteRole && !member.roles.cache.has(muteRole.id)) {
-                await member.roles.add(muteRole, `Muted by ${interaction.user.tag}: ${reason}`);
+                try {
+                    await member.roles.add(muteRole, `Muted by ${interaction.user.tag}: ${reason}`);
+                } catch (roleError) {
+                    console.log('Could not add mute role, timeout still active');
+                }
             }
             
             // Update database
@@ -110,7 +127,11 @@ module.exports = {
                 console.log('Could not send DM to user');
             }
             
-            // Success embed
+            // Success embed with better status indication
+            const muteMethodsUsed = [];
+            if (member.isCommunicationDisabled()) muteMethodsUsed.push('Discord Timeout');
+            if (muteRole && member.roles.cache.has(muteRole.id)) muteMethodsUsed.push('Mute Role');
+            
             const successEmbed = new EmbedBuilder()
                 .setColor('#00ff00')
                 .setTitle('✅ Member Muted')
@@ -118,6 +139,7 @@ module.exports = {
                 .addFields(
                     { name: 'Moderator', value: interaction.user.tag, inline: true },
                     { name: 'Duration', value: duration, inline: true },
+                    { name: 'Methods', value: muteMethodsUsed.join(', ') || 'Timeout', inline: true },
                     { name: 'Reason', value: reason, inline: false },
                     { name: 'Expires', value: `<t:${Math.floor(muteUntil.getTime() / 1000)}:R>`, inline: true }
                 )

@@ -25,18 +25,26 @@ module.exports = {
             return interaction.reply({ content: '❌ User not found in this server.', ephemeral: true });
         }
         
-        if (!member.isCommunicationDisabled()) {
+        // Check if member is muted (either timeout or mute role)
+        const muteRole = interaction.guild.roles.cache.find(role => role.name === 'Muted');
+        const hasTimeout = member.isCommunicationDisabled();
+        const hasMuteRole = muteRole && member.roles.cache.has(muteRole.id);
+        
+        if (!hasTimeout && !hasMuteRole) {
             return interaction.reply({ content: '❌ This member is not muted.', ephemeral: true });
         }
         
         try {
-            // Remove timeout
-            await member.timeout(null, reason);
+            // Remove timeout if present
+            if (hasTimeout) {
+                await member.timeout(null, reason);
+                console.log('Removed Discord timeout');
+            }
             
             // Remove mute role if it exists
-            const muteRole = interaction.guild.roles.cache.find(role => role.name === 'Muted');
-            if (muteRole && member.roles.cache.has(muteRole.id)) {
+            if (hasMuteRole) {
                 await member.roles.remove(muteRole, `Unmuted by ${interaction.user.tag}: ${reason}`);
+                console.log('Removed mute role');
             }
             
             // Update database
@@ -74,14 +82,19 @@ module.exports = {
                 console.log('Could not send DM to user');
             }
             
-            // Success embed
+            // Success embed with better status indication
+            const unmuteMethodsUsed = [];
+            if (hasTimeout && !member.isCommunicationDisabled()) unmuteMethodsUsed.push('Discord Timeout Removed');
+            if (hasMuteRole && (!muteRole || !member.roles.cache.has(muteRole.id))) unmuteMethodsUsed.push('Mute Role Removed');
+            
             const successEmbed = new EmbedBuilder()
                 .setColor('#00ff00')
                 .setTitle('✅ Member Unmuted')
                 .setDescription(`${target.tag} has been unmuted`)
                 .addFields(
                     { name: 'Moderator', value: interaction.user.tag, inline: true },
-                    { name: 'Reason', value: reason, inline: true }
+                    { name: 'Methods', value: unmuteMethodsUsed.join(', ') || 'Unmuted', inline: true },
+                    { name: 'Reason', value: reason, inline: false }
                 )
                 .setTimestamp();
             

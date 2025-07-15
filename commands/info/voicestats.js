@@ -1,7 +1,6 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const VoiceActivity = require('../../models/VoiceActivity');
-const { EmbedTemplates, Colors } = require('../../utils/EmbedTemplates');
-const { EmbedUtils } = require('../../utils/EmbedUtils');
+const logger = require('../../utils/logger');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -16,11 +15,10 @@ module.exports = {
         const targetUser = interaction.options.getUser('user') || interaction.user;
         
         // Show loading state
-        const loadingEmbed = EmbedUtils.createLoading(
-            'Loading Voice Stats',
-            `📊 Fetching voice activity data for ${targetUser.username}...`
-        );
-        await interaction.reply({ embeds: [loadingEmbed] });
+        await interaction.reply({ 
+            content: `📊 Fetching voice activity data for ${targetUser.username}...`,
+            ephemeral: true
+        });
         
         try {
             const userStats = await VoiceActivity.findOne({
@@ -29,14 +27,17 @@ module.exports = {
             });
 
             if (!userStats) {
-                const noDataEmbed = EmbedTemplates.info(
-                    'No Voice Activity',
-                    targetUser.id === interaction.user.id 
-                        ? '📊 You haven\'t joined any voice channels yet! Join one to start earning XP.'
-                        : `📊 ${targetUser.username} hasn't joined any voice channels yet.`,
-                    interaction.guild
-                );
-                return interaction.editReply({ embeds: [noDataEmbed] });
+                const noDataEmbed = new EmbedBuilder()
+                    .setColor('#FFA500')
+                    .setTitle('📊 No Voice Activity')
+                    .setDescription(
+                        targetUser.id === interaction.user.id 
+                            ? 'You haven\'t joined any voice channels yet! Join one to start earning XP.'
+                            : `${targetUser.username} hasn't joined any voice channels yet.`
+                    )
+                    .setTimestamp();
+                    
+                return interaction.editReply({ content: null, embeds: [noDataEmbed] });
             }
 
             // Get user's rank
