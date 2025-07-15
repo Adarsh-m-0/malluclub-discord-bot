@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
-const UserRoles = require('../../models/UserRoles');
+const ModerationLog = require('../../models/ModerationLog');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -284,9 +284,6 @@ async function handleAddRole(interaction) {
     try {
         await member.roles.add(role, `Role added by ${interaction.user.tag}`);
 
-        // Save role assignment to database
-        await saveRoleAssignment(member, role, interaction.user.tag);
-
         const embed = new EmbedBuilder()
             .setColor(0x00FF00)
             .setTitle('✅ Role Added')
@@ -348,9 +345,6 @@ async function handleRemoveRole(interaction) {
 
     try {
         await member.roles.remove(role, `Role removed by ${interaction.user.tag}`);
-
-        // Remove role from database
-        await removeRoleAssignment(member, role);
 
         const embed = new EmbedBuilder()
             .setColor(0xFF6B6B)
@@ -448,57 +442,6 @@ async function handleRoleMembers(interaction) {
         .setTimestamp();
 
     await interaction.editReply({ embeds: [embed] });
-}
-
-async function saveRoleAssignment(member, role, assignedBy) {
-    try {
-        const isVoiceRole = ['Voice Newcomer', 'Voice Regular', 'Voice Enthusiast', 'Voice Expert', 'Voice Master', 'Voice Legend'].includes(role.name);
-        const level = getVoiceLevelFromRole(role.name);
-        
-        await UserRoles.findOneAndUpdate(
-            { userId: member.id, guildId: member.guild.id },
-            {
-                userId: member.id,
-                guildId: member.guild.id,
-                username: member.user.username,
-                lastSeen: new Date(),
-                $addToSet: {
-                    roles: {
-                        roleId: role.id,
-                        roleName: role.name,
-                        assignedAt: new Date(),
-                        assignedBy: assignedBy,
-                        isAutoRole: role.id === process.env.AUTO_ROLE_ID,
-                        isVoiceRole: isVoiceRole,
-                        level: level
-                    }
-                }
-            },
-            { upsert: true, new: true }
-        );
-        
-        console.log(`📝 Saved role assignment: ${role.name} to ${member.user.tag}`);
-    } catch (error) {
-        console.error('Error saving role assignment:', error);
-    }
-}
-
-async function removeRoleAssignment(member, role) {
-    try {
-        await UserRoles.findOneAndUpdate(
-            { userId: member.id, guildId: member.guild.id },
-            {
-                $pull: {
-                    roles: { roleId: role.id }
-                },
-                lastSeen: new Date()
-            }
-        );
-        
-        console.log(`📝 Removed role assignment: ${role.name} from ${member.user.tag}`);
-    } catch (error) {
-        console.error('Error removing role assignment:', error);
-    }
 }
 
 function getVoiceLevelFromRole(roleName) {
