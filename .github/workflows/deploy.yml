@@ -1,0 +1,44 @@
+name: Deploy to Contabo Server
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to Contabo server
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.CONTABO_HOST }}
+        username: ${{ secrets.CONTABO_USERNAME }}
+        key: ${{ secrets.CONTABO_SSH_KEY }}
+        script: |
+          cd /opt/malluclub-bot
+          
+          # Stop the bot
+          pm2 stop malluclub-bot || true
+          
+          # Pull latest changes
+          git pull origin main
+          
+          # Install any new dependencies
+          npm install --production
+          
+          # Deploy new commands
+          node deploy-commands.js
+          
+          # Start the bot
+          pm2 start malluclub-bot
+          
+          # Show status
+          pm2 status malluclub-bot
+          
+          echo "✅ Bot updated successfully!"
