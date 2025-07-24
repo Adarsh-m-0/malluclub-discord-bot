@@ -31,59 +31,24 @@ module.exports = {
                 return await interaction.reply({ embeds: [noDataEmbed] });
             }
             
-            // Build leaderboard text with clean formatting
-            let leaderboardText = '';
-            const topUsers = leaderboard.slice(0, 3); // Top 3 users
-            const otherUsers = leaderboard.slice(3); // Remaining users
-            
-            // Format top 3 users with special styling
-            for (let i = 0; i < topUsers.length; i++) {
-                const entry = topUsers[i];
+            // Build minimal, informative leaderboard text
+            let leaderboardText = `Pos  Name             Lv   XP     Chat  VC\n`;
+            leaderboardText += `---------------------------------------------\n`;
+            for (let i = 0; i < leaderboard.length; i++) {
+                const entry = leaderboard[i];
                 const user = await interaction.guild.members.fetch(entry.userId).catch(() => null);
-                const username = user ? user.displayName : 'Unknown User';
-                
-                const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
-                const levelBadge = getLevelBadge(entry.level);
-                
-                leaderboardText += `${medal} **${username}** ${levelBadge}\n`;
-                leaderboardText += `    \`Level ${entry.level}\` • \`${entry.xp.toLocaleString()} XP\`\n`;
-                leaderboardText += `    📝 Chat: \`${entry.chatXP.toLocaleString()}\` | 🎤 VC: \`${entry.vcXP.toLocaleString()}\`\n\n`;
+                let username = user ? user.displayName : 'Unknown User';
+                if (username.length > 13) username = username.slice(0, 11) + '…';
+                const position = (i + 1).toString().padStart(2, ' ');
+                // Calculate level from XP to ensure accuracy
+                const level = Math.floor(entry.xp / 200);
+                leaderboardText += `${position}. ${username.padEnd(13, ' ')} ${level.toString().padStart(2, ' ')} ${entry.xp.toLocaleString().padStart(6, ' ')} ${entry.chatXP.toLocaleString().padStart(5, ' ')} ${entry.vcXP.toLocaleString().padStart(5, ' ')}\n`;
             }
-            
-            // Add separator if there are more users
-            if (otherUsers.length > 0) {
-                leaderboardText += '**─────────────────────**\n\n';
-            }
-            
-            // Format remaining users with clean numbering
-            for (let i = 0; i < otherUsers.length; i++) {
-                const entry = otherUsers[i];
-                const user = await interaction.guild.members.fetch(entry.userId).catch(() => null);
-                const username = user ? user.displayName : 'Unknown User';
-                
-                const position = `${i + 4}`;
-                const levelBadge = getLevelBadge(entry.level);
-                
-                leaderboardText += `\`${position.padStart(2, ' ')}.\` **${username}** ${levelBadge}\n`;
-                leaderboardText += `      \`Level ${entry.level}\` • \`${entry.xp.toLocaleString()} XP\`\n`;
-                leaderboardText += `      📝 Chat: \`${entry.chatXP.toLocaleString()}\` | 🎤 VC: \`${entry.vcXP.toLocaleString()}\`\n\n`;
-            }
-            
-            // Calculate total XP and average level
-            const totalXP = leaderboard.reduce((sum, entry) => sum + entry.xp, 0);
-            const avgLevel = Math.round(leaderboard.reduce((sum, entry) => sum + entry.level, 0) / leaderboard.length);
-            
+
             const leaderboardEmbed = EmbedTemplates.createEmbed({
-                title: `XP Leaderboard - Top ${leaderboard.length}`,
-                description: leaderboardText,
+                title: `XP Leaderboard`,
+                description: '```\n' + leaderboardText + '```',
                 color: getLeaderboardColor(leaderboard.length),
-                fields: [
-                    {
-                        name: 'Server Stats',
-                        value: `\`\`\`yaml\nTotal XP: ${totalXP.toLocaleString()}\nAverage Level: ${avgLevel}\nActive Users: ${leaderboard.length}\`\`\``,
-                        inline: false
-                    }
-                ],
                 footer: {
                     text: `Keep earning XP to climb the ranks! • ${interaction.guild.name}`,
                     iconURL: interaction.guild.iconURL({ dynamic: true })
@@ -106,14 +71,6 @@ module.exports = {
         }
     }
 };
-
-// Helper function to get level badge (minimal emojis)
-function getLevelBadge(level) {
-    if (level >= 100) return '👑'; // Crown for level 100+
-    if (level >= 50) return '💎';  // Diamond for level 50+
-    if (level >= 25) return '⭐';  // Star for level 25+
-    return '';                     // No badge for lower levels
-}
 
 // Helper function to get color based on leaderboard size
 function getLeaderboardColor(userCount) {
