@@ -19,6 +19,16 @@ const userSchema = new mongoose.Schema({
         default: 0,
         min: 0
     },
+    chatXP: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
+    vcXP: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
     level: {
         type: Number,
         default: 0,
@@ -48,6 +58,27 @@ const userSchema = new mongoose.Schema({
     lastSeen: {
         type: Date,
         default: Date.now
+    },
+    lastMessageXP: {
+        type: Date,
+        default: null
+    },
+    lastVCXP: {
+        type: Date,
+        default: null
+    },
+    dailyXP: {
+        type: Number,
+        default: 0,
+        min: 0
+    },
+    dailyXPReset: {
+        type: Date,
+        default: null
+    },
+    lastXPTimestamp: {
+        type: Date,
+        default: null
     }
 }, {
     timestamps: true

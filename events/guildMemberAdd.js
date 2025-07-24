@@ -1,6 +1,6 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const logger = require('../utils/logger');
-const { Colors } = require('../utils/EmbedTemplates');
+const { EmbedTemplates, Colors } = require('../utils/EmbedTemplates');
 
 // Debounce map to prevent duplicate welcome messages
 const welcomeDebounce = new Map();
@@ -74,33 +74,12 @@ module.exports = {
                 return;
             }
 
-            // Create modern welcome embed with clean styling
-            const welcomeEmbed = new EmbedBuilder()
-                .setAuthor({
-                    name: `Welcome to ${member.guild.name}!`,
-                    iconURL: member.guild.iconURL({ dynamic: true })
-                })
-                .setTitle(`👋 Hey ${member.user.username}!`)
-                .setDescription(`**Welcome to our community!**\n\nWe're excited to have you here. Feel free to explore, make friends, and join the conversation!\n\n\`\`\`\nYou are our ${getOrdinalNumber(member.guild.memberCount)} member!\nCheck out the channels and start chatting\nHave fun and enjoy your stay!\`\`\``)
-                .setColor(Colors.PRIMARY)
+            // Use the shared welcome embed template, but override for minimal style
+            let welcomeEmbed = EmbedTemplates.welcome(member.user, member.guild)
+                .setDescription(`Welcome to the club, **${member.user.username}**!`)
                 .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
-                .addFields(
-                    {
-                        name: '📊 Server Stats',
-                        value: `\`\`\`yaml\nMembers: ${member.guild.memberCount}\nChannels: ${member.guild.channels.cache.size}\`\`\``,
-                        inline: true
-                    },
-                    {
-                        name: '🎯 Quick Start',
-                        value: `\`\`\`\nRead the rules\nIntroduce yourself\nJoin voice channels\nEarn XP by chatting\`\`\``,
-                        inline: true
-                    }
-                )
-                .setFooter({ 
-                    text: `Member #${member.guild.memberCount} • ${member.guild.name}`,
-                    iconURL: member.guild.iconURL({ dynamic: true })
-                })
-                .setTimestamp();
+                .setFields([]) // Remove extra fields for minimalism
+                .setImage(null); // Remove banner image for minimalism
 
             // Send welcome message
             await welcomeChannel.send({ 

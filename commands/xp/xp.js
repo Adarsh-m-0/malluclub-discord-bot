@@ -62,6 +62,16 @@ module.exports = {
                     inline: true 
                 },
                 { 
+                    name: 'Chat XP', 
+                    value: `**${userStats.chatXP.toLocaleString()}**`, 
+                    inline: true 
+                },
+                { 
+                    name: 'VC XP', 
+                    value: `**${userStats.vcXP.toLocaleString()}**`, 
+                    inline: true 
+                },
+                { 
                     name: 'Voice Time', 
                     value: `**${voiceTimeFormatted}**`, 
                     inline: true 
@@ -73,7 +83,7 @@ module.exports = {
                 },
                 {
                     name: 'XP Earning Rates',
-                    value: `\`\`\`yaml\nMuted:    0.5 XP/min\nTalking:  1.0 XP/min\nStreaming: 2.0 XP/min\nCamera:   5.0 XP/min\`\`\``,
+                    value: `\`\`\`yaml\nMuted:    0.5 XP/min\nTalking:  1.0 XP/min\nStreaming: 2.0 XP/min\nCamera:   5.0 XP/min\nChat:     5 XP/msg (30s cooldown)\`\`\``,
                     inline: false
                 }
             ];

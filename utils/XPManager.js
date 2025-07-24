@@ -6,7 +6,7 @@ class XPManager {
         this.voiceUsers = new Map(); // Track users in voice channels
         this.xpInterval = 60000; // 1 minute in milliseconds
         this.minVoiceTime = 30000; // Minimum 30 seconds in voice to start earning XP
-        this.minUsersForXP = 1; // Minimum users in voice channel to earn XP (changed to 1)
+        this.minUsersForXP = 2; // Minimum users in voice channel to earn XP (changed to 2 for fairness)
         this.maxXPPerHour = 300; // Maximum XP per hour to prevent farming (increased for new rates)
         this.rateLimitWindow = 60000; // 1 minute rate limit window
         this.userRateLimits = new Map(); // Track user rate limits
@@ -16,24 +16,24 @@ class XPManager {
         
         // XP rates based on voice state
         this.xpRates = {
-            muted: 0.5,      // 0.5 XP for muted users
-            talking: 1,      // 1 XP for talking users (unmuted)
-            streaming: 2,    // 2 XP for streaming users
-            camera: 5        // 5 XP for users with camera on
+            muted: 1,      // 1 XP for muted users
+            talking: 2,    // 2 XP for talking users (unmuted)
+            streaming: 3,  // 3 XP for streaming users
+            camera: 5      // 5 XP for users with camera on
         };
         
         // Start cleanup interval
         this.startCleanupInterval();
     }
 
-    // Calculate level from XP
+    // Calculate level from XP (200 XP per level, matches chat XP)
     calculateLevel(xp) {
-        return Math.floor(Math.sqrt(xp / 100));
+        return Math.floor(xp / 200);
     }
 
     // Calculate XP needed for next level
     calculateXPForLevel(level) {
-        return Math.pow(level, 2) * 100;
+        return 200 * level;
     }
 
     // Calculate XP needed for next level from current XP
@@ -109,26 +109,23 @@ class XPManager {
 
     // Calculate XP amount based on voice state
     calculateXPAmount(voiceState) {
+        // No XP if deafened or self-muted
+        if (voiceState && (voiceState.selfDeaf || voiceState.deaf || voiceState.selfMute)) {
+            return 0;
+        }
         // Highest priority: Camera on
         if (voiceState && voiceState.selfVideo) {
-            // // console.log(`User has camera on, awarding ${this.xpRates.camera} XP`);
             return this.xpRates.camera;
         }
-        
         // Second priority: Streaming
         if (voiceState && voiceState.streaming) {
-            // // console.log(`User is streaming, awarding ${this.xpRates.streaming} XP`);
             return this.xpRates.streaming;
         }
-        
         // Third priority: Talking (unmuted)
         if (voiceState && !voiceState.mute && !voiceState.deaf && !voiceState.selfMute && !voiceState.selfDeaf) {
-            // // console.log(`User is talking (unmuted), awarding ${this.xpRates.talking} XP`);
             return this.xpRates.talking;
         }
-        
-        // Default: Muted users
-        // // console.log(`User is muted, awarding ${this.xpRates.muted} XP`);
+        // Default: Muted users (but not self-muted/deafened)
         return this.xpRates.muted;
     }
 
@@ -301,39 +298,52 @@ class XPManager {
     async addXP(userId, guildId, xpAmount, voiceMinutes = 0) {
         try {
             // Use findOneAndUpdate with upsert to handle duplicates safely
-            const result = await User.findOneAndUpdate(
-                { userId, guildId },
-                {
-                    $inc: { 
-                        xp: xpAmount,
-                        voiceTime: voiceMinutes 
-                    },
-                    $set: { 
-                        lastSeen: new Date() 
-                    },
-                    $setOnInsert: {
-                        username: 'Unknown User',
-                        level: 0,
-                        joinedAt: new Date()
-                    }
-                },
-                { 
-                    upsert: true, 
-                    new: true,
-                    runValidators: true 
-                }
-            );
+            let result = await User.findOne({ userId, guildId });
+            const now = Date.now();
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (!result) {
+                result = new User({
+                    userId,
+                    guildId,
+                    username: 'Unknown User',
+                    level: 0,
+                    joinedAt: new Date(),
+                    dailyXP: 0,
+                    dailyXPReset: today
+                });
+            }
+            if (!result.dailyXPReset || result.dailyXPReset < today) {
+                result.dailyXP = 0;
+                result.dailyXPReset = today;
+            }
+            const DAILY_XP_CAP = 1000;
+            if (voiceMinutes > 0 && result.dailyXP >= DAILY_XP_CAP) return null; // Cap reached for VC
+            // Cap XP to not exceed daily limit
+            let xpToAward = xpAmount;
+            if (voiceMinutes > 0) {
+                xpToAward = Math.min(xpAmount, DAILY_XP_CAP - result.dailyXP);
+            }
+            result.xp += xpToAward;
+            if (voiceMinutes > 0) {
+                result.vcXP = (result.vcXP || 0) + xpToAward;
+                result.voiceTime += voiceMinutes;
+                result.dailyXP += xpToAward;
+                result.lastVCXP = now;
+                result.lastXPTimestamp = now;
+            }
+            result.lastSeen = new Date();
 
             // Calculate and update level
             const newLevel = this.calculateLevel(result.xp);
             const oldLevel = result.level;
-            
+
             if (newLevel !== oldLevel) {
                 result.level = newLevel;
                 await result.save();
+            } else {
+                await result.save();
             }
-
-            // // console.log(`User ${userId}: XP ${result.xp - xpAmount} -> ${result.xp}, Level ${oldLevel} -> ${result.level}`);
 
             // Update daily voice activity for VC active system
             if (voiceMinutes > 0) {
@@ -352,7 +362,7 @@ class XPManager {
 
             // Return level up info
             return {
-                xpGained: xpAmount,
+                xpGained: xpToAward,
                 totalXP: result.xp,
                 oldLevel,
                 newLevel: result.level,
@@ -442,7 +452,9 @@ class XPManager {
                 userId: user.userId,
                 xp: user.xp,
                 level: user.level,
-                voiceTime: user.voiceTime
+                voiceTime: user.voiceTime,
+                chatXP: user.chatXP || 0,
+                vcXP: user.vcXP || 0
             }));
 
         } catch (error) {
@@ -535,6 +547,8 @@ class XPManager {
                 xp: user.xp,
                 level: user.level,
                 voiceTime: user.voiceTime,
+                chatXP: user.chatXP || 0,
+                vcXP: user.vcXP || 0,
                 xpToNextLevel: this.calculateXPToNextLevel(user.xp),
                 rank: rank,
                 isTracked: this.isUserTracked(userId, guildId)

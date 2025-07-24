@@ -46,7 +46,8 @@ module.exports = {
                 const levelBadge = getLevelBadge(entry.level);
                 
                 leaderboardText += `${medal} **${username}** ${levelBadge}\n`;
-                leaderboardText += `    \`Level ${entry.level}\` • \`${entry.xp.toLocaleString()} XP\`\n\n`;
+                leaderboardText += `    \`Level ${entry.level}\` • \`${entry.xp.toLocaleString()} XP\`\n`;
+                leaderboardText += `    📝 Chat: \`${entry.chatXP.toLocaleString()}\` | 🎤 VC: \`${entry.vcXP.toLocaleString()}\`\n\n`;
             }
             
             // Add separator if there are more users
@@ -64,7 +65,8 @@ module.exports = {
                 const levelBadge = getLevelBadge(entry.level);
                 
                 leaderboardText += `\`${position.padStart(2, ' ')}.\` **${username}** ${levelBadge}\n`;
-                leaderboardText += `      \`Level ${entry.level}\` • \`${entry.xp.toLocaleString()} XP\`\n\n`;
+                leaderboardText += `      \`Level ${entry.level}\` • \`${entry.xp.toLocaleString()} XP\`\n`;
+                leaderboardText += `      📝 Chat: \`${entry.chatXP.toLocaleString()}\` | 🎤 VC: \`${entry.vcXP.toLocaleString()}\`\n\n`;
             }
             
             // Calculate total XP and average level
