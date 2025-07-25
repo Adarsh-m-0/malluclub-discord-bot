@@ -87,8 +87,8 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
     const userRank = userEntry ? leaderboard.indexOf(userEntry) + 1 : null;
 
     // Build leaderboard text (optimized for mobile/desktop, no Chat/VC columns)
-    let leaderboardText = `#  Name         Lv   XP\n`;
-    leaderboardText += `------------------------\n`;
+    let leaderboardText = `#  Name                Lv   XP\n`;
+    leaderboardText += `-----------------------------\n`;
     if (pageEntries.length === 0) {
         leaderboardText += `No users found.\n`;
     } else {
@@ -98,7 +98,8 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
             try {
                 username = (await interaction.guild.members.fetch(entry.userId).catch(() => null))?.displayName || 'Unknown';
             } catch { username = 'Unknown'; }
-            if (username.length > 10) username = username.slice(0, 9) + '…';
+            // Increase username column width to 16
+            if (username.length > 16) username = username.slice(0, 15) + '…';
             const position = (startIdx + i + 1).toString().padStart(2, ' ');
             // Badges
             let badge = BADGES[startIdx + i] || '';
@@ -106,20 +107,23 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
             else if (!badge && entry.level >= 50) badge = '✨';
             // Highlight user
             const highlight = entry.userId === userId ? '➡️ ' : '';
-            leaderboardText += `${highlight}${badge}${position}. ${username.padEnd(10, ' ')} ${entry.level.toString().padStart(2, ' ')} ${entry.xp.toLocaleString().padStart(5, ' ')}\n`;
+            leaderboardText += `${highlight}${badge}${position}. ${username.padEnd(16, ' ')} ${entry.level.toString().padStart(2, ' ')}  ${entry.xp.toLocaleString().padStart(5, ' ')}\n`;
         }
     }
     // If user not on page, show their entry at the bottom
     if (userEntry && (userRank < startIdx + 1 || userRank > endIdx)) {
-        let username;
-        try {
-            username = (await interaction.guild.members.fetch(userEntry.userId).catch(() => null))?.displayName || 'Unknown';
-        } catch { username = 'Unknown'; }
-        if (username.length > 10) username = username.slice(0, 9) + '…';
-        let badge = BADGES[userRank - 1] || '';
-        if (!badge && userEntry.level >= 100) badge = '💎';
-        else if (!badge && userEntry.level >= 50) badge = '✨';
-        leaderboardText += `\n➡️${badge}${userRank.toString().padStart(2, ' ')}. ${username.padEnd(10, ' ')} ${userEntry.level.toString().padStart(2, ' ')} ${userEntry.xp.toLocaleString().padStart(5, ' ')}   (You)\n`;
+        // Do not show 'next' for top 3 (badged) users
+        if (userRank > 3) {
+            let username;
+            try {
+                username = (await interaction.guild.members.fetch(userEntry.userId).catch(() => null))?.displayName || 'Unknown';
+            } catch { username = 'Unknown'; }
+            if (username.length > 16) username = username.slice(0, 15) + '…';
+            let badge = BADGES[userRank - 1] || '';
+            if (!badge && userEntry.level >= 100) badge = '💎';
+            else if (!badge && userEntry.level >= 50) badge = '✨';
+            leaderboardText += `\n➡️${badge}${userRank.toString().padStart(2, ' ')}. ${username.padEnd(16, ' ')} ${userEntry.level.toString().padStart(2, ' ')}  ${userEntry.xp.toLocaleString().padStart(5, ' ')}   (You)\n`;
+        }
     }
 
     // Truncate if too long for Discord embed (4096 chars max)
