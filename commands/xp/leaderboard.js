@@ -55,12 +55,20 @@ module.exports = {
 };
 
 async function showLeaderboard(interaction, customPage, customType, customPeriod, customSort) {
-    // Wrap the entire function in a try-catch for global error handling
+    // Immediately defer the reply to prevent timeouts
     try {
-    try {
+        // Initial defer to prevent timeout
+        if (!interaction.deferred && !interaction.replied) {
+            if (interaction.isButton() || interaction.isStringSelectMenu()) {
+                await interaction.deferUpdate().catch(() => {});
+            } else {
+                await interaction.deferReply().catch(() => {});
+            }
+        }
+
         // Verify guild context
         if (!interaction.guild) {
-            await interaction.reply({ content: 'This command can only be used in a server!', ephemeral: true });
+            await interaction.editReply({ content: 'This command can only be used in a server!', ephemeral: true });
             return;
         }
 
@@ -231,9 +239,18 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         }
     }
 
-    // Create a more user-friendly title
+    // Create embed title
     const titleSuffix = period !== 'all' ? ` • ${period.charAt(0).toUpperCase() + period.slice(1)}` : '';
     const title = `${type === 'xp' ? 'Combined' : type === 'chatXP' ? 'Chat' : 'VC'} XP Leaderboard${titleSuffix}`;
+
+    // Clear any previous timeouts
+    if (interaction.client._timeouts) {
+        const prevTimeout = interaction.client._timeouts.get(interaction.user.id);
+        if (prevTimeout) {
+            clearTimeout(prevTimeout);
+            interaction.client._timeouts.delete(interaction.user.id);
+        }
+    }
 
     // Add user's progress section if they have XP
     let userProgress = '';
@@ -354,29 +371,20 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         return;
     }
 
-    // Collector options with proper cleanup
-    // More conservative collector options
-    const collectorOptions = {
-        time: 180000, // 3 minutes
-        filter: i => i.user.id === userId && !i.deferred, // Only accept non-deferred interactions
-        max: 50, // More conservative limit
-        dispose: true // Clean up deleted messages
-
-    // Combined collector for both buttons and select menu
+    // Set up collector for interactions
     const collector = message.createMessageComponentCollector({
-        ...collectorOptions
+        time: 180000, // 3 minutes
+        filter: i => i.user.id === userId,
+        max: 50,
+        componentType: ComponentType.Button | ComponentType.StringSelect
     });
 
     // Track active interactions to prevent duplicates
     const activeInteractions = new Set();
     
     collector.on('collect', async (i) => {
-        // Prevent duplicate interactions
-        if (activeInteractions.has(i.id)) return;
-        activeInteractions.add(i.id);
-
         try {
-            // Always defer immediately
+            // Defer the update immediately
             await i.deferUpdate().catch(() => {});
 
             if (i.isButton()) {
