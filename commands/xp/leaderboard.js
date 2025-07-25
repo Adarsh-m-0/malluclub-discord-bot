@@ -87,9 +87,9 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
     const userRank = userEntry ? leaderboard.indexOf(userEntry) + 1 : null;
 
     // Build leaderboard text (optimized for mobile/desktop, no Chat/VC columns)
-    // Monospace columns: position (4), name (18), level (4), xp (9)
-    let leaderboardText = ` #  Name               Lv   XP\n`;
-    leaderboardText += `------------------------------------\n`;
+    // Two-line format: first line is position, name, XP; second line is level (under XP)
+    let leaderboardText = `#  Name                XP\n`;
+    leaderboardText += `-------------------------------\n`;
     if (pageEntries.length === 0) {
         leaderboardText += `No users found.\n`;
     } else {
@@ -107,7 +107,11 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
             if (entry.level >= 100) badge = '💎';
             else if (entry.level >= 50) badge = '✨';
             const highlight = entry.userId === userId ? '➡️ ' : '   ';
-            leaderboardText += `${highlight}${badge}${position}. ${username} ${entry.level.toString().padStart(3, ' ')} ${entry.xp.toLocaleString().padStart(9, ' ')}\n`;
+            // XP column width
+            const xpStr = entry.xp.toLocaleString().padStart(9, ' ');
+            leaderboardText += `${highlight}${badge}${position}. ${username}${xpStr}\n`;
+            // Level under XP (align to XP column)
+            leaderboardText += `${' '.repeat(24)}Lv ${entry.level}\n`;
         }
     }
     // If user not on page, show their entry at the bottom
@@ -122,7 +126,9 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
             let badge = '';
             if (userEntry.level >= 100) badge = '💎';
             else if (userEntry.level >= 50) badge = '✨';
-            leaderboardText += `\n➡️ ${badge}${userRank.toString().padStart(3, ' ')}. ${username} ${userEntry.level.toString().padStart(3, ' ')} ${userEntry.xp.toLocaleString().padStart(9, ' ')}   (You)\n`;
+            const xpStr = userEntry.xp.toLocaleString().padStart(9, ' ');
+            leaderboardText += `\n➡️ ${badge}${userRank.toString().padStart(3, ' ')}. ${username}${xpStr}   (You)\n`;
+            leaderboardText += `${' '.repeat(24)}Lv ${userEntry.level}\n`;
         }
     }
 
