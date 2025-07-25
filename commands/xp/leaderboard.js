@@ -55,24 +55,71 @@ module.exports = {
 };
 
 async function showLeaderboard(interaction, customPage, customType, customPeriod, customSort) {
-    const guildId = interaction.guild.id;
-    const userId = interaction.user.id;
-    const type = customType || interaction.options.getString('type') || 'xp';
-    const period = customPeriod || interaction.options.getString('period') || 'all';
-    const sort = customSort || interaction.options.getString('sort') || type;
-    let page = customPage || interaction.options.getInteger('page') || 1;
+    // Wrap the entire function in a try-catch for global error handling
+    try {
+    try {
+        // Verify guild context
+        if (!interaction.guild) {
+            await interaction.reply({ content: 'This command can only be used in a server!', ephemeral: true });
+            return;
+        }
 
-    // Fetch leaderboard data
-    let leaderboard = await XPManager.getTimeFilteredLeaderboard(guildId, type, period, 1000);
-    // Ensure data consistency
-    leaderboard = leaderboard.map(e => {
-        const xp = typeof e.xp === 'number' && !isNaN(e.xp) ? e.xp : 0;
-        return {
-            ...e,
-            xp,
-            level: XPManager.calculateLevel ? XPManager.calculateLevel(xp) : (e.level || 0)
-        };
-    });
+        // Basic parameter validation
+        const guildId = interaction.guild.id;
+        const userId = interaction.user.id;
+        
+        // Validate and sanitize parameters with defaults
+        const type = ['xp', 'chatXP', 'vcXP'].includes(customType) ? customType : 
+                    interaction.options?.getString('type') || 'xp';
+        
+        const period = ['all', 'weekly', 'monthly'].includes(customPeriod) ? customPeriod :
+                      interaction.options?.getString('period') || 'all';
+        
+        const validSorts = ['xp', 'level', 'voiceTime'];
+        const sort = validSorts.includes(customSort) ? customSort :
+                    validSorts.includes(interaction.options?.getString('sort')) ? interaction.options.getString('sort') :
+                    type;
+        
+        let page = Number(customPage) || interaction.options?.getInteger('page') || 1;
+
+    // Fetch and validate leaderboard data
+    let leaderboard;
+    try {
+        leaderboard = await XPManager.getTimeFilteredLeaderboard(guildId, type, period, 1000);
+        
+        if (!Array.isArray(leaderboard)) {
+            throw new Error('Invalid leaderboard data received');
+        }
+
+        // Ensure data consistency and handle missing/invalid values
+        leaderboard = leaderboard.map(e => {
+            // Validate XP value
+            const xp = typeof e?.xp === 'number' && !isNaN(e.xp) ? Math.max(0, e.xp) : 0;
+            
+            // Calculate level safely
+            let level = 0;
+            try {
+                level = XPManager.calculateLevel ? XPManager.calculateLevel(xp) : (e.level || 0);
+            } catch (levelError) {
+                console.error('Error calculating level:', levelError);
+            }
+
+            return {
+                ...e,
+                userId: e.userId || 'unknown',
+                xp,
+                level,
+                voiceTime: typeof e.voiceTime === 'number' ? Math.max(0, e.voiceTime) : 0
+            };
+        }).filter(e => e.userId !== 'unknown'); // Remove invalid entries
+    } catch (error) {
+        console.error('Error fetching leaderboard:', error);
+        await interaction.reply({ 
+            content: 'Failed to fetch leaderboard data. Please try again later.',
+            ephemeral: true 
+        });
+        return;
+    }
     
     leaderboard = leaderboard.sort((a, b) => (b[sort] || 0) - (a[sort] || 0));
 
@@ -88,27 +135,54 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
     const userEntry = leaderboard.find(e => e.userId === userId);
     const userRank = userEntry ? leaderboard.indexOf(userEntry) + 1 : null;
 
-    // Build leaderboard text with mentions
+    // Build leaderboard text with mentions and handle rate limits
     let leaderboardText = '';
+    
     if (pageEntries.length === 0) {
-        leaderboardText += 'No users found';
+        leaderboardText += 'No users found in this leaderboard';
     } else {
+        // Fetch all members in batch to avoid rate limits
+        const userIds = pageEntries.map(entry => entry.userId);
+        const members = new Map();
+        
+        try {
+            const fetchedMembers = await interaction.guild.members.fetch({ user: userIds });
+            fetchedMembers.forEach(member => members.set(member.id, member));
+        } catch (error) {
+            console.error('Error fetching members:', error);
+            // Continue with empty members map - we'll use fallback display
+        }
+
         for (let i = 0; i < pageEntries.length; i++) {
             const entry = pageEntries[i];
             const rank = startIdx + i + 1;
             
-            // Get member safely
-            const member = await interaction.guild.members.fetch(entry.userId).catch(() => null);
+            // Get member from cache
+            const member = members.get(entry.userId);
             
-            // Add rank-based badges
-            let badge = rank <= 3 ? BADGES[rank - 1] : entry.level >= 100 ? '💎' : entry.level >= 50 ? '✨' : '•';
+            // Add rank-based badges with emoji fallbacks
+            let badge;
+            try {
+                badge = rank <= 3 ? (BADGES[rank - 1] || '•') : 
+                       entry.level >= 100 ? '💎' : 
+                       entry.level >= 50 ? '✨' : '•';
+            } catch {
+                badge = '•'; // Fallback if emoji fails
+            }
             
-            // Format the entry line with mention
-            const mention = member ? `<@${entry.userId}>` : 'Unknown User';
-            const levelInfo = `Level ${entry.level}`;
-            const xpStr = entry.xp.toLocaleString();
+            // Format the entry line with fallbacks
+            const displayName = member ? (member.displayName || member.user.username) : 'Unknown User';
+            const mention = member ? `<@${entry.userId}>` : displayName;
+            const levelInfo = `Level ${entry.level || 0}`;
+            const xpStr = (entry.xp || 0).toLocaleString();
             
-            leaderboardText += `${badge} **#${rank}** ${mention} • ${levelInfo} • ${xpStr} XP\n`;
+            // Add entry with proper formatting and error handling
+            try {
+                leaderboardText += `${badge} **#${rank}** ${mention} • ${levelInfo} • ${xpStr} XP\n`;
+            } catch {
+                // Fallback formatting if anything fails
+                leaderboardText += `• #${rank} Unknown User • Level 0 • 0 XP\n`;
+            }
         }
     }
     
@@ -247,21 +321,36 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
 
     let message;
     try {
-        if (interaction.isButton?.() || interaction.isStringSelectMenu?.()) {
-            message = await interaction.update(responseOptions);
-        } else if (interaction.replied || interaction.deferred) {
+        // Handle the initial command interaction
+        if (!interaction.isButton() && !interaction.isStringSelectMenu()) {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferReply();
+            }
             message = await interaction.editReply(responseOptions);
-        } else {
-            message = await interaction.reply(responseOptions);
+        }
+        // Handle button/select menu interactions
+        else {
+            if (!interaction.deferred) {
+                await interaction.deferUpdate();
+            }
+            message = await interaction.editReply(responseOptions);
         }
     } catch (error) {
         console.error('Error sending leaderboard response:', error);
+        const errorMessage = {
+            content: 'There was an error displaying the leaderboard. Please try the command again.',
+            ephemeral: true
+        };
+        
         try {
-            await interaction.followUp({ 
-                content: 'There was an error displaying the leaderboard. Please try again.',
-                ephemeral: true 
-            });
-        } catch {} // Ignore if this fails too
+            if (interaction.isButton() || interaction.isStringSelectMenu()) {
+                await interaction.followUp(errorMessage);
+            } else {
+                await interaction.reply(errorMessage);
+            }
+        } catch (followUpError) {
+            console.error('Error sending error message:', followUpError);
+        }
         return;
     }
 
@@ -279,16 +368,23 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
 
     collector.on('collect', async (i) => {
         try {
-            await i.deferUpdate(); // Always defer first to prevent timeout
+            // Don't defer again if already deferred
+            if (!i.deferred) {
+                await i.deferUpdate().catch(() => {});
+            }
 
             if (i.isButton()) {
+                let newPage = page;
                 switch (i.customId) {
                     case 'leaderboard_prev':
-                        await showLeaderboard(i, page - 1, type, period, sort);
+                        newPage = Math.max(1, page - 1);
                         break;
                     case 'leaderboard_next':
-                        await showLeaderboard(i, page + 1, type, period, sort);
+                        newPage = Math.min(totalPagesSafe, page + 1);
                         break;
+                }
+                if (newPage !== page) {
+                    await showLeaderboard(i, newPage, type, period, sort);
                 }
             } else if (i.isStringSelectMenu()) {
                 const selected = i.values[0];
@@ -335,6 +431,24 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
             }
         } catch {} // Ignore if message was deleted or can't be edited
     });
+
+    } catch (globalError) {
+        console.error('Global leaderboard error:', globalError);
+        try {
+            const errorMessage = {
+                content: 'An unexpected error occurred. Please try again later.',
+                ephemeral: true
+            };
+            
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply(errorMessage);
+            } else {
+                await interaction.followUp(errorMessage);
+            }
+        } catch (finalError) {
+            console.error('Failed to send error message:', finalError);
+        }
+    }
 }
 
 function getLeaderboardColor(userCount) {
