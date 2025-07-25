@@ -88,10 +88,16 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         
         let page = Number(customPage) || interaction.options?.getInteger('page') || 1;
 
-    // Fetch and validate leaderboard data
+    // Fetch and validate leaderboard data with timeout
     let leaderboard;
     try {
-        leaderboard = await XPManager.getTimeFilteredLeaderboard(guildId, type, period, 1000);
+        // Add timeout to prevent hanging on large datasets
+        const fetchPromise = XPManager.getTimeFilteredLeaderboard(guildId, type, period, 1000);
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Leaderboard fetch timeout')), 10000)
+        );
+        
+        leaderboard = await Promise.race([fetchPromise, timeoutPromise]);
         
         if (!Array.isArray(leaderboard)) {
             throw new Error('Invalid leaderboard data received');
@@ -117,7 +123,8 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
                 level,
                 voiceTime: typeof e.voiceTime === 'number' ? Math.max(0, e.voiceTime) : 0
             };
-        }).filter(e => e.userId !== 'unknown'); // Remove invalid entries
+        })
+        .filter(e => e.userId !== 'unknown' && e.xp > 0); // Only include users with at least 1 XP
     } catch (error) {
         console.error('Error fetching leaderboard:', error);
         const errorMsg = error.code === 50001 ? 'Bot is missing permissions to fetch member data.' :
@@ -165,17 +172,26 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         } else if (period === 'monthly') {
             leaderboardText = 'No activity found in the last 30 days. Try the all-time leaderboard!';
         } else {
-            leaderboardText = 'No users found in this leaderboard';
+            leaderboardText = 'No users with XP found in this leaderboard';
         }
     } else {
-        // Prepare member data fetching
+        // Prepare member data fetching - limit to page entries only for better performance
         const userIds = pageEntries.map(entry => entry.userId);
         const members = new Map();
         
         try {
-            // Fetch members in one batch request
-            const fetchedMembers = await interaction.guild.members.fetch({ user: userIds });
-            fetchedMembers.forEach(member => members.set(member.id, member));
+            // Fetch members in smaller batches to prevent timeouts
+            const batchSize = 10;
+            for (let i = 0; i < userIds.length; i += batchSize) {
+                const batch = userIds.slice(i, i + batchSize);
+                try {
+                    const fetchedMembers = await interaction.guild.members.fetch({ user: batch });
+                    fetchedMembers.forEach(member => members.set(member.id, member));
+                } catch (batchError) {
+                    console.error(`Error fetching member batch ${i}-${i + batchSize}:`, batchError);
+                    // Continue with other batches even if one fails
+                }
+            }
         } catch (error) {
             console.error('Error fetching members:', error);
         }
@@ -278,7 +294,7 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         description: `${leaderboardText}${userProgress.userProgressText}${truncated ? '\n\n*Some entries hidden due to length*' : ''}`,
         color: getLeaderboardColor(pageEntries.length),
         footer: {
-            text: `Page ${page}/${totalPagesSafe}${userEntry ? ` • Your rank: #${userRank}` : ''}`,
+            text: `Page ${page}/${totalPagesSafe} • ${totalUsers} users with XP${userEntry ? ` • Your rank: #${userRank}` : ''}`,
             iconURL: interaction.guild.iconURL({ dynamic: true })
         },
         timestamp: new Date()
@@ -451,8 +467,20 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
                 }
 
                 if (newPage !== page) {
-                    console.log(`Page navigation: ${page} -> ${newPage}`);
-                    await showLeaderboard(i, newPage, type, period, sort);
+                    console.log(`Page navigation: ${page} -> ${newPage} (Total pages: ${totalPagesSafe})`);
+                    try {
+                        await showLeaderboard(i, newPage, type, period, sort);
+                    } catch (navError) {
+                        console.error('Navigation error:', navError);
+                        
+                        // Send error message if navigation fails
+                        if (i.deferred && !i.replied) {
+                            await i.editReply({
+                                content: `Error loading page ${newPage}. Please try again or use a different page.`,
+                                components: []
+                            }).catch(() => {});
+                        }
+                    }
                 }
             } 
             // Handle select menu interactions
@@ -482,7 +510,19 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
 
                 // Always reset to page 1 when changing filters
                 console.log(`Filter change: type=${newType}, period=${newPeriod}`);
-                await showLeaderboard(i, 1, newType, newPeriod, newSort);
+                try {
+                    await showLeaderboard(i, 1, newType, newPeriod, newSort);
+                } catch (filterError) {
+                    console.error('Filter change error:', filterError);
+                    
+                    // Send error message if filter change fails
+                    if (i.deferred && !i.replied) {
+                        await i.editReply({
+                            content: `Error applying filter "${selected}". Please try again.`,
+                            components: []
+                        }).catch(() => {});
+                    }
+                }
             }
         } catch (error) {
             console.error('Error handling interaction:', error);
