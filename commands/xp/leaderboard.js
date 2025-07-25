@@ -58,6 +58,16 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
 
     // Fetch leaderboard data (now supports time/type filters)
     let leaderboard = await XPManager.getTimeFilteredLeaderboard(guildId, type, period, 1000);
+    // Defensive: ensure XP and level are always present and correct
+    leaderboard = leaderboard.map(e => {
+        // Always calculate level from XP
+        const xp = typeof e.xp === 'number' && !isNaN(e.xp) ? e.xp : 0;
+        return {
+            ...e,
+            xp,
+            level: XPManager.calculateLevel ? XPManager.calculateLevel(xp) : (e.level || 0)
+        };
+    });
     // Sort/filter logic
     leaderboard = leaderboard.sort((a, b) => (b[sort] || 0) - (a[sort] || 0));
 
@@ -79,21 +89,25 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
     // Build leaderboard text (optimized for mobile/desktop, no Chat/VC columns)
     let leaderboardText = `#  Name         Lv   XP\n`;
     leaderboardText += `------------------------\n`;
-    for (let i = 0; i < pageEntries.length; i++) {
-        const entry = pageEntries[i];
-        let username;
-        try {
-            username = (await interaction.guild.members.fetch(entry.userId).catch(() => null))?.displayName || 'Unknown';
-        } catch { username = 'Unknown'; }
-        if (username.length > 10) username = username.slice(0, 9) + '…';
-        const position = (startIdx + i + 1).toString().padStart(2, ' ');
-        // Badges
-        let badge = BADGES[startIdx + i] || '';
-        if (!badge && entry.level >= 100) badge = '💎';
-        else if (!badge && entry.level >= 50) badge = '✨';
-        // Highlight user
-        const highlight = entry.userId === userId ? '➡️ ' : '';
-        leaderboardText += `${highlight}${badge}${position}. ${username.padEnd(10, ' ')} ${entry.level.toString().padStart(2, ' ')} ${entry.xp.toLocaleString().padStart(5, ' ')}\n`;
+    if (pageEntries.length === 0) {
+        leaderboardText += `No users found.\n`;
+    } else {
+        for (let i = 0; i < pageEntries.length; i++) {
+            const entry = pageEntries[i];
+            let username;
+            try {
+                username = (await interaction.guild.members.fetch(entry.userId).catch(() => null))?.displayName || 'Unknown';
+            } catch { username = 'Unknown'; }
+            if (username.length > 10) username = username.slice(0, 9) + '…';
+            const position = (startIdx + i + 1).toString().padStart(2, ' ');
+            // Badges
+            let badge = BADGES[startIdx + i] || '';
+            if (!badge && entry.level >= 100) badge = '💎';
+            else if (!badge && entry.level >= 50) badge = '✨';
+            // Highlight user
+            const highlight = entry.userId === userId ? '➡️ ' : '';
+            leaderboardText += `${highlight}${badge}${position}. ${username.padEnd(10, ' ')} ${entry.level.toString().padStart(2, ' ')} ${entry.xp.toLocaleString().padStart(5, ' ')}\n`;
+        }
     }
     // If user not on page, show their entry at the bottom
     if (userEntry && (userRank < startIdx + 1 || userRank > endIdx)) {
