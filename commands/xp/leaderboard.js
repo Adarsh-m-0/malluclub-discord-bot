@@ -122,8 +122,13 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         }).filter(e => e.userId !== 'unknown'); // Remove invalid entries
     } catch (error) {
         console.error('Error fetching leaderboard:', error);
+        const errorMsg = error.code === 50001 ? 'Bot is missing permissions to fetch member data.' :
+                        error.code === 50013 ? 'Bot cannot access member data in this channel.' :
+                        error.message?.includes('Invalid') ? 'Could not retrieve valid leaderboard data.' :
+                        'Failed to fetch leaderboard data. Please try again later.';
+        
         await interaction.reply({ 
-            content: 'Failed to fetch leaderboard data. Please try again later.',
+            content: errorMsg,
             ephemeral: true 
         });
         return;
@@ -178,18 +183,20 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
                 badge = '•'; // Fallback if emoji fails
             }
             
-            // Format the entry line with fallbacks
+            // Format the entry line with consistent spacing
             const displayName = member ? (member.displayName || member.user.username) : 'Unknown User';
             const mention = member ? `<@${entry.userId}>` : displayName;
-            const levelInfo = `Level ${entry.level || 0}`;
-            const xpStr = (entry.xp || 0).toLocaleString();
+            const rankStr = `#${rank}`.padStart(3);
+            const levelInfo = `Level ${entry.level || 0}`.padEnd(10);
+            const xpStr = (entry.xp || 0).toLocaleString().padStart(8);
             
             // Add entry with proper formatting and error handling
             try {
-                leaderboardText += `${badge} **#${rank}** ${mention} • ${levelInfo} • ${xpStr} XP\n`;
+                leaderboardText += `${badge} **${rankStr}** ${mention} • ${levelInfo} • ${xpStr} XP\n`;
             } catch {
                 // Fallback formatting if anything fails
-                leaderboardText += `• #${rank} Unknown User • Level 0 • 0 XP\n`;
+                const fallbackRank = `#${rank}`.padStart(3);
+                leaderboardText += `• ${fallbackRank} Unknown User • Level 0    • ${0} XP\n`;
             }
         }
     }
@@ -279,62 +286,56 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         timestamp: new Date()
     });
 
-    // Filter select menu with categories
+    // Filter select menu with simple options
     const filterOptions = [
-        {
-            label: 'XP Type',
-            options: [
-                { label: 'Combined XP', value: 'xp', description: 'Show total XP from all sources' },
-                { label: 'Chat XP', value: 'chatXP', description: 'Show XP from chat messages' },
-                { label: 'VC XP', value: 'vcXP', description: 'Show XP from voice chat' }
-            ]
-        },
-        {
-            label: 'Time Period',
-            options: [
-                { label: 'All-time', value: 'all', description: 'Show all-time rankings' },
-                { label: 'Weekly', value: 'weekly', description: 'Show this week\'s rankings' },
-                { label: 'Monthly', value: 'monthly', description: 'Show this month\'s rankings' }
-            ]
-        },
-        {
-            label: 'Sort By',
-            options: [
-                { label: 'XP', value: 'sort_xp', description: 'Sort by total XP' },
-                { label: 'Level', value: 'sort_level', description: 'Sort by level' },
-                { label: 'Activity', value: 'sort_voiceTime', description: 'Sort by voice activity' }
-            ]
-        }
+        { label: '📊 Combined XP', value: 'xp', description: 'Show total XP from all sources' },
+        { label: '💬 Chat XP', value: 'chatXP', description: 'Show XP from chat messages' },
+        { label: '🎤 VC XP', value: 'vcXP', description: 'Show XP from voice chat' },
+        { label: '⌛ All-time', value: 'all', description: 'Show all-time rankings' },
+        { label: '📅 Weekly', value: 'weekly', description: 'Show this week\'s rankings' },
+        { label: '📆 Monthly', value: 'monthly', description: 'Show this month\'s rankings' },
+        { label: '🏆 Sort by XP', value: 'sort_xp', description: 'Sort by total XP' },
+        { label: '⭐ Sort by Level', value: 'sort_level', description: 'Sort by level' },
+        { label: '⏱️ Sort by Activity', value: 'sort_voiceTime', description: 'Sort by voice activity' }
     ];
     
-    // Set only one default selection for the filter menu (Discord only allows one)
-    filterOptions.forEach(opt => { opt.default = false; });
+    // Set one default selection based on current view state
     // Priority: type > period > sort
     let defaultSet = false;
-    for (const opt of filterOptions) {
-        if (!defaultSet && opt.value === type) {
-            opt.default = true;
+    filterOptions.forEach(opt => { opt.default = false; });  // Reset all defaults
+    
+    // First try to set type as default
+    if (!defaultSet) {
+        const typeOption = filterOptions.find(opt => opt.value === type);
+        if (typeOption) {
+            typeOption.default = true;
             defaultSet = true;
         }
     }
+    
+    // If no type matched, try period
     if (!defaultSet) {
-        for (const opt of filterOptions) {
-            if (!defaultSet && opt.value === period) {
-                opt.default = true;
-                defaultSet = true;
-            }
+        const periodOption = filterOptions.find(opt => opt.value === period);
+        if (periodOption) {
+            periodOption.default = true;
+            defaultSet = true;
         }
     }
+    
+    // If still no default, try sort
     if (!defaultSet) {
-        if (sort === 'xp' && filterOptions.find(opt => opt.value === 'sort_xp')) filterOptions.find(opt => opt.value === 'sort_xp').default = true;
-        else if (sort === 'level' && filterOptions.find(opt => opt.value === 'sort_level')) filterOptions.find(opt => opt.value === 'sort_level').default = true;
-        else if (sort === 'voiceTime' && filterOptions.find(opt => opt.value === 'sort_voiceTime')) filterOptions.find(opt => opt.value === 'sort_voiceTime').default = true;
+        const sortOption = filterOptions.find(opt => opt.value === `sort_${sort}`);
+        if (sortOption) {
+            sortOption.default = true;
+        }
     }
 
     const filterRow = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
             .setCustomId('leaderboard_filter')
-            .setPlaceholder('Filter/Sort')
+            .setPlaceholder('Select Filter or Sort Option')
+            .setMinValues(1)
+            .setMaxValues(1)
             .addOptions(filterOptions)
     );
 
@@ -353,16 +354,12 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
 
     let message;
     try {
-        // We've already deferred the reply at the start of the function
-        // Now we just need to edit the reply with our content
-        message = await interaction.editReply(responseOptions).catch(async (err) => {
-            console.error('Failed to edit reply:', err);
-            // If edit fails, try to send a new reply
-            return await interaction.followUp({
-                ...responseOptions,
-                ephemeral: true
-            });
-        });
+        // Simple response handling
+        if (!interaction.deferred && !interaction.replied) {
+            message = await interaction.reply({ ...responseOptions, fetchReply: true });
+        } else {
+            message = await interaction.editReply(responseOptions);
+        }
 
         if (!message) {
             throw new Error('Failed to send leaderboard message');
@@ -398,19 +395,25 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
     
     collector.on('collect', async (i) => {
         try {
-            // Verify the interaction is from the same user
-            if (i.user.id !== userId) {
-                await i.reply({ content: 'You cannot use this menu.', ephemeral: true });
+            // Check if interaction is still valid
+            if (!i.isValid()) {
+                console.log('Received invalid interaction');
                 return;
             }
 
-            // Handle the interaction
-            try {
-                await i.deferUpdate();
-            } catch (err) {
-                console.error('Failed to defer update:', err);
+            // Verify user permissions
+            if (i.user.id !== userId) {
+                await i.reply({ 
+                    content: 'Only the user who ran the command can use these controls.', 
+                    ephemeral: true 
+                });
                 return;
             }
+
+            // Defer the interaction immediately
+            await i.deferUpdate().catch(error => {
+                console.error('Failed to defer interaction:', error);
+            });
 
             if (i.isButton()) {
                 switch (i.customId) {
