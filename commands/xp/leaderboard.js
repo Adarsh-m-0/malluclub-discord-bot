@@ -6,6 +6,15 @@ const PAGE_SIZE = 10;
 const BADGES = ['🥇', '🥈', '🥉'];
 const MILESTONE_LEVELS = [50, 100];
 
+// Filter options for the select menu - simplified and clear descriptions
+const FILTER_OPTIONS = [
+    { label: '📊 Combined XP', value: 'xp', description: 'Chat + Voice XP combined' },
+    { label: '💬 Chat XP', value: 'chatXP', description: 'Only XP from messages' },
+    { label: '🎤 Voice XP', value: 'vcXP', description: 'Only XP from voice chat' },
+    { label: '📅 Weekly', value: 'weekly', description: 'Last 7 days only' },
+    { label: '📆 Monthly', value: 'monthly', description: 'Last 30 days only' }
+];
+
 // Fixed width constants for perfect alignment
 const POSITION_WIDTH = 3;
 const NAME_WIDTH = 18;  // Slightly reduced for better mobile display
@@ -32,15 +41,6 @@ module.exports = {
                     { name: 'All-time', value: 'all' },
                     { name: 'Weekly', value: 'weekly' },
                     { name: 'Monthly', value: 'monthly' }
-                )
-                .setRequired(false))
-        .addStringOption(option =>
-            option.setName('sort')
-                .setDescription('Sort by')
-                .addChoices(
-                    { name: 'XP', value: 'xp' },
-                    { name: 'Level', value: 'level' },
-                    { name: 'Activity', value: 'voiceTime' }
                 )
                 .setRequired(false))
         .addIntegerOption(option =>
@@ -83,10 +83,8 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         const period = ['all', 'weekly', 'monthly'].includes(customPeriod) ? customPeriod :
                       interaction.options?.getString('period') || 'all';
         
-        const validSorts = ['xp', 'level', 'voiceTime'];
-        const sort = validSorts.includes(customSort) ? customSort :
-                    validSorts.includes(interaction.options?.getString('sort')) ? interaction.options.getString('sort') :
-                    type;
+        // Always sort by the selected type for simplicity
+        const sort = customSort || type;
         
         let page = Number(customPage) || interaction.options?.getInteger('page') || 1;
 
@@ -127,10 +125,20 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
                         error.message?.includes('Invalid') ? 'Could not retrieve valid leaderboard data.' :
                         'Failed to fetch leaderboard data. Please try again later.';
         
-        await interaction.reply({ 
-            content: errorMsg,
-            ephemeral: true 
-        });
+        try {
+            if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({ 
+                    content: errorMsg,
+                    ephemeral: true 
+                });
+            } else {
+                await interaction.editReply({ 
+                    content: errorMsg
+                });
+            }
+        } catch (replyError) {
+            console.error('Failed to send error message:', replyError);
+        }
         return;
     }
     
@@ -152,53 +160,45 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
     let leaderboardText = '';
     
     if (pageEntries.length === 0) {
-        leaderboardText += 'No users found in this leaderboard';
+        if (period === 'weekly') {
+            leaderboardText = 'No activity found in the last 7 days. Try the all-time leaderboard!';
+        } else if (period === 'monthly') {
+            leaderboardText = 'No activity found in the last 30 days. Try the all-time leaderboard!';
+        } else {
+            leaderboardText = 'No users found in this leaderboard';
+        }
     } else {
-        // Fetch all members in batch to avoid rate limits
+        // Prepare member data fetching
         const userIds = pageEntries.map(entry => entry.userId);
         const members = new Map();
         
         try {
+            // Fetch members in one batch request
             const fetchedMembers = await interaction.guild.members.fetch({ user: userIds });
             fetchedMembers.forEach(member => members.set(member.id, member));
         } catch (error) {
             console.error('Error fetching members:', error);
-            // Continue with empty members map - we'll use fallback display
         }
 
-        for (let i = 0; i < pageEntries.length; i++) {
-            const entry = pageEntries[i];
-            const rank = startIdx + i + 1;
-            
-            // Get member from cache
+        // Generate leaderboard entries
+        leaderboardText = pageEntries.map((entry, index) => {
+            const rank = startIdx + index + 1;
             const member = members.get(entry.userId);
             
-            // Add rank-based badges with emoji fallbacks
-            let badge;
-            try {
-                badge = rank <= 3 ? (BADGES[rank - 1] || '•') : 
-                       entry.level >= 100 ? '💎' : 
-                       entry.level >= 50 ? '✨' : '•';
-            } catch {
-                badge = '•'; // Fallback if emoji fails
-            }
+            // Get badge based on rank or level
+            const badge = rank <= 3 ? (BADGES[rank - 1] || '•') : 
+                         entry.level >= 100 ? '💎' : 
+                         entry.level >= 50 ? '✨' : '•';
             
-            // Format the entry line with consistent spacing
+            // Format user display info
             const displayName = member ? (member.displayName || member.user.username) : 'Unknown User';
             const mention = member ? `<@${entry.userId}>` : displayName;
             const rankStr = `#${rank}`.padStart(3);
             const levelInfo = `Level ${entry.level || 0}`.padEnd(10);
             const xpStr = (entry.xp || 0).toLocaleString().padStart(8);
             
-            // Add entry with proper formatting and error handling
-            try {
-                leaderboardText += `${badge} **${rankStr}** ${mention} • ${levelInfo} • ${xpStr} XP\n`;
-            } catch {
-                // Fallback formatting if anything fails
-                const fallbackRank = `#${rank}`.padStart(3);
-                leaderboardText += `• ${fallbackRank} Unknown User • Level 0    • ${0} XP\n`;
-            }
-        }
+            return `${badge} **${rankStr}** ${mention} • ${levelInfo} • ${xpStr} XP`;
+        }).join('\n');
     }
     
     // Add user's position if not on current page (no level)
@@ -231,53 +231,51 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         truncated = true;
     }
 
-    // Progress bar for user
-    let progressBar = '';
-    if (userEntry) {
+    // Calculate user progress information
+    const userProgress = (() => {
+        if (!userEntry) return { progressBar: '', userProgressText: '' };
+
         const currentLevelXP = XPManager.calculateXPForLevel(userEntry.level);
         const nextLevelXP = XPManager.calculateXPForLevel(userEntry.level + 1);
         const progressXP = userEntry.xp - currentLevelXP;
         const neededXP = nextLevelXP - currentLevelXP;
-        
-        if (neededXP > 0) {
-            const progressPercentage = Math.min(100, Math.round((progressXP / neededXP) * 100));
-            const filled = Math.round(progressPercentage / 5);
-            progressBar = `Progress: [${'▰'.repeat(filled)}${'▱'.repeat(20 - filled)}] ${progressXP.toLocaleString()}/${neededXP.toLocaleString()} XP`;
-        }
-    }
 
-    // Create embed title
-    const titleSuffix = period !== 'all' ? ` • ${period.charAt(0).toUpperCase() + period.slice(1)}` : '';
-    const title = `${type === 'xp' ? 'Combined' : type === 'chatXP' ? 'Chat' : 'VC'} XP Leaderboard${titleSuffix}`;
+        if (neededXP <= 0) return { progressBar: '', userProgressText: '' };
+
+        const progressPercentage = Math.min(100, Math.round((progressXP / neededXP) * 100));
+        const filled = Math.round(progressPercentage / 5);
+
+        return {
+            progressBar: `Progress: [${'▰'.repeat(filled)}${'▱'.repeat(20 - filled)}] ${progressXP.toLocaleString()}/${neededXP.toLocaleString()} XP`,
+            userProgressText: `\n\n**Your Progress**\nLevel ${userEntry.level} → ${userEntry.level + 1}\n${progressXP.toLocaleString()} / ${neededXP.toLocaleString()} XP (${progressPercentage}%)`
+        };
+    })();
+
+    // Create embed title with clear information
+    const typeNames = {
+        'xp': 'Combined XP',
+        'chatXP': 'Chat XP', 
+        'vcXP': 'Voice XP'
+    };
+    
+    const periodNames = {
+        'all': '',
+        'weekly': ' • This Week',
+        'monthly': ' • This Month'
+    };
+    
+    const title = `${typeNames[type]} Leaderboard${periodNames[period]}`;
+    console.log(`Title created: "${title}" (type: ${type}, period: ${period})`); // Debug line
 
     // Clear any previous timeouts
-    if (interaction.client._timeouts) {
-        const prevTimeout = interaction.client._timeouts.get(interaction.user.id);
-        if (prevTimeout) {
-            clearTimeout(prevTimeout);
-            interaction.client._timeouts.delete(interaction.user.id);
-        }
-    }
-
-    // Add user's progress section if they have XP
-    let userProgress = '';
-    if (userEntry) {
-        const currentLevelXP = XPManager.calculateXPForLevel(userEntry.level);
-        const nextLevelXP = XPManager.calculateXPForLevel(userEntry.level + 1);
-        const progressXP = userEntry.xp - currentLevelXP;
-        const neededXP = nextLevelXP - currentLevelXP;
-        
-        if (neededXP > 0) {
-            const progressPercentage = Math.min(100, Math.round((progressXP / neededXP) * 100));
-            userProgress = `\n\n**Your Progress**\n`;
-            userProgress += `Level ${userEntry.level} → ${userEntry.level + 1}\n`;
-            userProgress += `${progressXP.toLocaleString()} / ${neededXP.toLocaleString()} XP (${progressPercentage}%)`;
-        }
+    if (interaction.client._timeouts?.get(interaction.user.id)) {
+        clearTimeout(interaction.client._timeouts.get(interaction.user.id));
+        interaction.client._timeouts.delete(interaction.user.id);
     }
 
     const leaderboardEmbed = EmbedTemplates.createEmbed({
         title: title,
-        description: `${leaderboardText}${userProgress}${truncated ? '\n\n*Some entries hidden due to length*' : ''}`,
+        description: `${leaderboardText}${userProgress.userProgressText}${truncated ? '\n\n*Some entries hidden due to length*' : ''}`,
         color: getLeaderboardColor(pageEntries.length),
         footer: {
             text: `Page ${page}/${totalPagesSafe}${userEntry ? ` • Your rank: #${userRank}` : ''}`,
@@ -286,69 +284,64 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         timestamp: new Date()
     });
 
-    // Filter select menu with simple options
-    const filterOptions = [
-        { label: '📊 Combined XP', value: 'xp', description: 'Show total XP from all sources' },
-        { label: '💬 Chat XP', value: 'chatXP', description: 'Show XP from chat messages' },
-        { label: '🎤 VC XP', value: 'vcXP', description: 'Show XP from voice chat' },
-        { label: '⌛ All-time', value: 'all', description: 'Show all-time rankings' },
-        { label: '📅 Weekly', value: 'weekly', description: 'Show this week\'s rankings' },
-        { label: '📆 Monthly', value: 'monthly', description: 'Show this month\'s rankings' },
-        { label: '🏆 Sort by XP', value: 'sort_xp', description: 'Sort by total XP' },
-        { label: '⭐ Sort by Level', value: 'sort_level', description: 'Sort by level' },
-        { label: '⏱️ Sort by Activity', value: 'sort_voiceTime', description: 'Sort by voice activity' }
-    ];
-    
-    // Set one default selection based on current view state
-    // Priority: type > period > sort
-    let defaultSet = false;
-    filterOptions.forEach(opt => { opt.default = false; });  // Reset all defaults
-    
-    // First try to set type as default
-    if (!defaultSet) {
-        const typeOption = filterOptions.find(opt => opt.value === type);
-        if (typeOption) {
-            typeOption.default = true;
-            defaultSet = true;
-        }
-    }
-    
-    // If no type matched, try period
-    if (!defaultSet) {
-        const periodOption = filterOptions.find(opt => opt.value === period);
-        if (periodOption) {
-            periodOption.default = true;
-            defaultSet = true;
-        }
-    }
-    
-    // If still no default, try sort
-    if (!defaultSet) {
-        const sortOption = filterOptions.find(opt => opt.value === `sort_${sort}`);
-        if (sortOption) {
-            sortOption.default = true;
-        }
+    // Create options with the current selection marked as default - simplified logic
+    const filterOptions = FILTER_OPTIONS.map(opt => ({
+        ...opt,
+        default: opt.value === type || opt.value === period
+    }));
+
+    // Ensure only one default by priority (type first, then period)
+    const defaultOption = filterOptions.find(opt => opt.value === type) || 
+                          filterOptions.find(opt => opt.value === period);
+
+    if (defaultOption) {
+        filterOptions.forEach(opt => opt.default = (opt === defaultOption));
     }
 
     const filterRow = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
             .setCustomId('leaderboard_filter')
-            .setPlaceholder('Select Filter or Sort Option')
+            .setPlaceholder('Select XP Type or Time Period')
             .setMinValues(1)
             .setMaxValues(1)
             .addOptions(filterOptions)
     );
 
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('leaderboard_prev').setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(page === 1),
-        new ButtonBuilder().setCustomId('leaderboard_page').setLabel(`${page} / ${totalPagesSafe}`).setStyle(ButtonStyle.Primary).setDisabled(true),
-        new ButtonBuilder().setCustomId('leaderboard_next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(page === totalPagesSafe)
-    );
+    // Create navigation buttons with proper error handling
+    const createNavigationRow = () => {
+        try {
+            return new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('leaderboard_prev')
+                    .setLabel('◀')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setDisabled(page <= 1),
+                new ButtonBuilder()
+                    .setCustomId('leaderboard_page')
+                    .setLabel(`${page} / ${totalPagesSafe}`)
+                    .setStyle(ButtonStyle.Primary)
+                    .setDisabled(true),
+                new ButtonBuilder()
+                    .setCustomId('leaderboard_next')
+                    .setLabel('▶')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setDisabled(page >= totalPagesSafe)
+            );
+        } catch (error) {
+            console.error('Error creating navigation row:', error);
+            return null;
+        }
+    };
+
+    const navigationRow = createNavigationRow();
+    if (!navigationRow) {
+        throw new Error('Failed to create navigation buttons');
+    }
 
     // Response handling with error catching
     const responseOptions = { 
         embeds: [leaderboardEmbed], 
-        components: [row, filterRow],
+        components: [navigationRow, filterRow],
         fetchReply: true
     };
 
@@ -383,105 +376,251 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         return;
     }
 
-    // Set up collector for all component types
+    // Set up collector for all component types with improved filtering
     const collector = message.createMessageComponentCollector({
-        time: 180000, // 3 minutes
-        filter: i => i.user.id === userId && (i.isButton() || i.isStringSelectMenu()),
+        time: 120000, // Reduced to 2 minutes to prevent expired interactions
+        filter: i => {
+            // Only allow the original user to interact
+            if (i.user.id !== userId) return false;
+            
+            // Check if interaction is too old
+            const interactionAge = Date.now() - i.createdTimestamp;
+            if (interactionAge > 14 * 60 * 1000) { // 14 minutes max
+                return false;
+            }
+            
+            // Check if this interaction was already processed globally
+            if (i.client._processedInteractions?.has(i.id)) {
+                return false;
+            }
+            
+            // Only allow our specific component interactions
+            if (i.isButton()) {
+                return ['leaderboard_prev', 'leaderboard_next', 'leaderboard_page'].includes(i.customId);
+            }
+            
+            if (i.isStringSelectMenu()) {
+                return i.customId === 'leaderboard_filter';
+            }
+            
+            return false;
+        },
         max: 50
     });
+
+    // Initialize global interaction tracking if not exists
+    if (!collector.client._processedInteractions) {
+        collector.client._processedInteractions = new Set();
+    }
 
     // Track active interactions to prevent duplicates
     const activeInteractions = new Set();
     
     collector.on('collect', async (i) => {
         try {
-            // Check if interaction is still valid
-            if (!i.isValid()) {
-                console.log('Received invalid interaction');
-                return;
+            // Add to global processed interactions immediately
+            i.client._processedInteractions.add(i.id);
+            
+            // Clean up old processed interactions (keep last 1000)
+            if (i.client._processedInteractions.size > 1000) {
+                const oldInteractions = Array.from(i.client._processedInteractions).slice(0, 500);
+                oldInteractions.forEach(id => i.client._processedInteractions.delete(id));
             }
-
-            // Verify user permissions
+            
+            // Verify user permissions first
             if (i.user.id !== userId) {
-                await i.reply({ 
-                    content: 'Only the user who ran the command can use these controls.', 
-                    ephemeral: true 
-                });
+                if (!i.replied && !i.deferred) {
+                    await i.reply({ 
+                        content: 'Only the user who ran the command can use these controls.', 
+                        ephemeral: true 
+                    }).catch(() => {});
+                }
                 return;
             }
 
-            // Defer the interaction immediately
-            await i.deferUpdate().catch(error => {
-                console.error('Failed to defer interaction:', error);
-            });
+            // Track active interactions using interaction ID
+            const interactionKey = i.id;
+            if (activeInteractions.has(interactionKey)) {
+                console.log('Duplicate interaction prevented:', interactionKey);
+                return;
+            }
+            activeInteractions.add(interactionKey);
 
-            if (i.isButton()) {
-                switch (i.customId) {
-                    case 'leaderboard_prev':
-                        if (page > 1) {
-                            await showLeaderboard(i, page - 1, type, period, sort);
-                        }
-                        break;
-                    case 'leaderboard_next':
-                        if (page < totalPagesSafe) {
-                            await showLeaderboard(i, page + 1, type, period, sort);
-                        }
-                        break;
+            // Clear the interaction after processing
+            setTimeout(() => activeInteractions.delete(interactionKey), 5000);
+
+            // Add user-specific cooldown to prevent rapid clicking
+            const userCooldownKey = `${userId}_leaderboard`;
+            const now = Date.now();
+            if (!i.client._userCooldowns) {
+                i.client._userCooldowns = new Map();
+            }
+            
+            const lastInteraction = i.client._userCooldowns.get(userCooldownKey);
+            if (lastInteraction && now - lastInteraction < 1000) { // 1 second cooldown
+                console.log('User cooldown active, ignoring interaction');
+                activeInteractions.delete(interactionKey);
+                return;
+            }
+            i.client._userCooldowns.set(userCooldownKey, now);
+
+            // Check if interaction is still valid and within time limits
+            const interactionAge = Date.now() - i.createdTimestamp;
+            const maxInteractionAge = 14.5 * 60 * 1000; // 14.5 minutes (15min - safety buffer)
+            
+            if (interactionAge > maxInteractionAge) {
+                console.log('Interaction expired, ignoring:', interactionKey);
+                activeInteractions.delete(interactionKey);
+                return;
+            }
+
+            // Check interaction state and defer immediately - simplified approach
+            if (!i.deferred && !i.replied) {
+                try {
+                    await i.deferUpdate();
+                } catch (deferError) {
+                    console.error('Failed to defer interaction:', deferError);
+                    
+                    // Handle specific Discord API errors
+                    if (deferError.code === 10062) {
+                        console.log('Interaction expired or unknown, cleaning up');
+                    } else if (deferError.code === 40060) {
+                        console.log('Interaction already acknowledged');
+                    } else if (deferError.message === 'Defer timeout') {
+                        console.log('Defer operation timed out');
+                    }
+                    
+                    // Clean up and exit if we can't defer
+                    activeInteractions.delete(interactionKey);
+                    return;
                 }
-            } else if (i.isStringSelectMenu() && i.customId === 'leaderboard_filter') {
+            } else {
+                // Interaction was already handled
+                console.log('Interaction already processed, skipping');
+                activeInteractions.delete(interactionKey);
+                return;
+            }
+
+            // Handle button interactions with smooth transitions
+            if (i.isButton()) {
+                let newPage = page;
+                
+                if (i.customId === 'leaderboard_prev' && page > 1) {
+                    newPage = page - 1;
+                } else if (i.customId === 'leaderboard_next' && page < totalPagesSafe) {
+                    newPage = page + 1;
+                } else if (i.customId === 'leaderboard_page') {
+                    // Page button clicked, no action needed
+                    activeInteractions.delete(interactionKey);
+                    return;
+                }
+
+                if (newPage !== page) {
+                    try {
+                        // Clean up before starting new leaderboard
+                        activeInteractions.delete(interactionKey);
+                        await showLeaderboard(i, newPage, type, period, sort);
+                    } catch (showError) {
+                        console.error('Error updating leaderboard for button:', showError);
+                        // If showing leaderboard fails, send error message
+                        if (i.deferred && !i.replied) {
+                            await i.editReply({
+                                content: 'There was an error updating the leaderboard page. Please try again.',
+                                components: []
+                            }).catch(() => {});
+                        }
+                    }
+                } else {
+                    // No page change needed, clean up
+                    activeInteractions.delete(interactionKey);
+                }
+            } 
+            // Handle select menu interactions with smooth transitions
+            else if (i.isStringSelectMenu() && i.customId === 'leaderboard_filter') {
+                if (!i.values || i.values.length === 0) {
+                    console.error('No values in select menu interaction');
+                    activeInteractions.delete(interactionKey);
+                    return;
+                }
+
                 const selected = i.values[0];
                 let newType = type, newPeriod = period, newSort = sort;
+                console.log(`Filter selection: "${selected}" -> type: ${type}->${newType}, period: ${period}->${newPeriod}`); // Debug
 
-                // Handle filter/sort selection
-                if (['xp', 'chatXP', 'vcXP'].includes(selected)) newType = selected;
-                if (['all', 'weekly', 'monthly'].includes(selected)) newPeriod = selected;
-                if (selected.startsWith('sort_')) {
-                    switch (selected) {
-                        case 'sort_xp': newSort = 'xp'; break;
-                        case 'sort_level': newSort = 'level'; break;
-                        case 'sort_voiceTime': newSort = 'voiceTime'; break;
-                    }
+                // Process filter selection - preserve current selections properly
+                if (['xp', 'chatXP', 'vcXP'].includes(selected)) {
+                    newType = selected;
+                    // Keep current period (don't change time filter when changing XP type)
+                } else if (['weekly', 'monthly'].includes(selected)) {
+                    newPeriod = selected;
+                    // Keep current type (don't change XP type when changing time period)
                 }
+                
+                console.log(`After processing: type: ${newType}, period: ${newPeriod}`); // Debug
 
+                // Update sort to match the type for better accuracy
+                newSort = newType;
+
+                // Always reset to page 1 when changing filters
                 try {
+                    // Clean up before starting new leaderboard
+                    activeInteractions.delete(interactionKey);
                     await showLeaderboard(i, 1, newType, newPeriod, newSort);
-                } catch (err) {
-                    console.error('Failed to update leaderboard:', err);
-                    await i.followUp({
-                        content: 'Failed to update the leaderboard. Please try again.',
-                        ephemeral: true
-                    }).catch(console.error);
+                } catch (showError) {
+                    console.error('Error updating leaderboard for select menu:', showError);
+                    // If showing leaderboard fails, send error message
+                    if (i.deferred && !i.replied) {
+                        await i.editReply({
+                            content: 'There was an error updating the leaderboard filter. Please try again.',
+                            components: []
+                        }).catch(() => {});
+                    }
                 }
             }
         } catch (error) {
             console.error('Error handling interaction:', error);
+            
+            // Clean up the interaction key using interaction ID
+            const interactionKey = i.id;
+            activeInteractions.delete(interactionKey);
+            
             try {
-                // Only send error message if we haven't already sent a response
+                // Only send error message if we haven't already responded
                 if (!i.replied && !i.deferred) {
                     await i.reply({ 
                         content: 'There was an error processing your request. Please try again.',
                         ephemeral: true 
-                    });
+                    }).catch(() => {});
+                } else if (i.deferred && !i.replied) {
+                    await i.editReply({
+                        content: 'There was an error processing your request. Please try again.'
+                    }).catch(() => {});
                 }
-            } catch (e) {
-                console.error('Failed to send error message:', e);
+            } catch (followUpError) {
+                console.error('Failed to send error message:', followUpError);
             }
         }
     });
 
     collector.on('end', async (collected, reason) => {
+        // Clean up global tracking for this user
+        const userCooldownKey = `${userId}_leaderboard`;
+        if (collector.client._userCooldowns) {
+            collector.client._userCooldowns.delete(userCooldownKey);
+        }
+        
         // Only disable components if the message still exists and hasn't been replaced
         try {
             if (reason === 'time' || reason === 'limit') {
-                const disabledRow = new ActionRowBuilder().addComponents(
-                    row.components.map(button => ButtonBuilder.from(button).setDisabled(true))
+                const disabledNavigationRow = new ActionRowBuilder().addComponents(
+                    navigationRow.components.map(button => ButtonBuilder.from(button).setDisabled(true))
                 );
                 const disabledFilterRow = new ActionRowBuilder().addComponents(
                     filterRow.components.map(menu => StringSelectMenuBuilder.from(menu).setDisabled(true))
                 );
                 
                 await message.edit({ 
-                    components: [disabledRow, disabledFilterRow]
+                    components: [disabledNavigationRow, disabledFilterRow]
                 });
             }
         } catch {} // Ignore if message was deleted or can't be edited

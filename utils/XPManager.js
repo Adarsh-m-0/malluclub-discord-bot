@@ -498,12 +498,14 @@ class XPManager {
             // Use existing all-time leaderboard
             return this.getLeaderboard(guildId, limit);
         }
+        
         // Calculate date range
         let days = 7;
         if (period === 'monthly') days = 30;
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - days);
         startDate.setHours(0, 0, 0, 0);
+        
         // Aggregate chat XP
         let chatAgg = [];
         if (type === 'chatXP' || type === 'xp') {
@@ -542,14 +544,30 @@ class XPManager {
                 userMap.set(v._id, { userId: v._id, chatXP: 0, vcXP: v.vcXP, voiceTime: v.voiceTime, username: v.username });
             }
         }
+        
+        // If no data found for the time period, return empty array with helpful message
+        if (userMap.size === 0) {
+            return [];
+        }
+        
         // Calculate combined XP and level
         const users = Array.from(userMap.values()).map(u => {
-            const xp = (type === 'chatXP') ? u.chatXP : (type === 'vcXP') ? u.vcXP : (u.chatXP + u.vcXP);
+            let xp;
+            if (type === 'chatXP') {
+                xp = u.chatXP;
+            } else if (type === 'vcXP') {
+                xp = u.vcXP;
+            } else {
+                xp = u.chatXP + u.vcXP; // combined XP
+            }
             const level = this.calculateLevel(xp);
             return { ...u, xp, level };
         });
-        // Sort and limit
-        users.sort((a, b) => (b[type] || b.xp || 0) - (a[type] || a.xp || 0));
+        
+        // Sort by the correct field based on type
+        const sortField = type === 'chatXP' ? 'chatXP' : type === 'vcXP' ? 'vcXP' : 'xp';
+        users.sort((a, b) => (b[sortField] || 0) - (a[sortField] || 0));
+        
         return users.slice(0, limit);
     }
 
