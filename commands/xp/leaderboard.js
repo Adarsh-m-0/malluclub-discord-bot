@@ -87,8 +87,9 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
     const userRank = userEntry ? leaderboard.indexOf(userEntry) + 1 : null;
 
     // Build leaderboard text (optimized for mobile/desktop, no Chat/VC columns)
-    let leaderboardText = `#  Name                Lv   XP\n`;
-    leaderboardText += `-----------------------------\n`;
+    // Monospace columns: position (4), name (18), level (4), xp (9)
+    let leaderboardText = ` #  Name               Lv   XP\n`;
+    leaderboardText += `------------------------------------\n`;
     if (pageEntries.length === 0) {
         leaderboardText += `No users found.\n`;
     } else {
@@ -98,31 +99,30 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
             try {
                 username = (await interaction.guild.members.fetch(entry.userId).catch(() => null))?.displayName || 'Unknown';
             } catch { username = 'Unknown'; }
-            // Increase username column width to 16
+            // Truncate and pad username to 16 chars (for perfect alignment)
             if (username.length > 16) username = username.slice(0, 15) + '…';
-            const position = (startIdx + i + 1).toString().padStart(2, ' ');
-            // Badges
-            let badge = BADGES[startIdx + i] || '';
-            if (!badge && entry.level >= 100) badge = '💎';
-            else if (!badge && entry.level >= 50) badge = '✨';
-            // Highlight user
-            const highlight = entry.userId === userId ? '➡️ ' : '';
-            leaderboardText += `${highlight}${badge}${position}. ${username.padEnd(16, ' ')} ${entry.level.toString().padStart(2, ' ')}  ${entry.xp.toLocaleString().padStart(5, ' ')}\n`;
+            username = username.padEnd(16, ' ');
+            const position = (startIdx + i + 1).toString().padStart(3, ' ');
+            let badge = '';
+            if (entry.level >= 100) badge = '💎';
+            else if (entry.level >= 50) badge = '✨';
+            const highlight = entry.userId === userId ? '➡️ ' : '   ';
+            leaderboardText += `${highlight}${badge}${position}. ${username} ${entry.level.toString().padStart(3, ' ')} ${entry.xp.toLocaleString().padStart(9, ' ')}\n`;
         }
     }
     // If user not on page, show their entry at the bottom
     if (userEntry && (userRank < startIdx + 1 || userRank > endIdx)) {
-        // Do not show 'next' for top 3 (badged) users
         if (userRank > 3) {
             let username;
             try {
                 username = (await interaction.guild.members.fetch(userEntry.userId).catch(() => null))?.displayName || 'Unknown';
             } catch { username = 'Unknown'; }
             if (username.length > 16) username = username.slice(0, 15) + '…';
-            let badge = BADGES[userRank - 1] || '';
-            if (!badge && userEntry.level >= 100) badge = '💎';
-            else if (!badge && userEntry.level >= 50) badge = '✨';
-            leaderboardText += `\n➡️${badge}${userRank.toString().padStart(2, ' ')}. ${username.padEnd(16, ' ')} ${userEntry.level.toString().padStart(2, ' ')}  ${userEntry.xp.toLocaleString().padStart(5, ' ')}   (You)\n`;
+            username = username.padEnd(16, ' ');
+            let badge = '';
+            if (userEntry.level >= 100) badge = '💎';
+            else if (userEntry.level >= 50) badge = '✨';
+            leaderboardText += `\n➡️ ${badge}${userRank.toString().padStart(3, ' ')}. ${username} ${userEntry.level.toString().padStart(3, ' ')} ${userEntry.xp.toLocaleString().padStart(9, ' ')}   (You)\n`;
         }
     }
 
@@ -195,7 +195,10 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         new ButtonBuilder().setCustomId('leaderboard_page').setLabel(`Page ${page}/${totalPagesSafe}`).setStyle(ButtonStyle.Primary).setDisabled(true)
     );
 
-    if (interaction.replied || interaction.deferred) {
+    // If this is a button/select interaction, use .update instead of .reply/editReply
+    if (interaction.isButton?.() || interaction.isStringSelectMenu?.()) {
+        await interaction.update({ embeds: [leaderboardEmbed], components: [row, filterRow] });
+    } else if (interaction.replied || interaction.deferred) {
         await interaction.editReply({ embeds: [leaderboardEmbed], components: [row, filterRow] });
     } else {
         await interaction.reply({ embeds: [leaderboardEmbed], components: [row, filterRow] });
