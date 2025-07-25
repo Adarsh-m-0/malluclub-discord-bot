@@ -1,5 +1,7 @@
 const User = require('../models/User');
 const VcActiveManager = require('./VcActiveManager');
+const DailyChatActivity = require('../models/DailyChatActivity');
+const DailyVoiceActivity = require('../models/DailyVoiceActivity');
 
 class XPManager {
     constructor() {
@@ -16,31 +18,40 @@ class XPManager {
         
         // XP rates based on voice state
         this.xpRates = {
-            muted: 1,      // 1 XP for muted users
-            talking: 2,    // 2 XP for talking users (unmuted)
-            streaming: 3,  // 3 XP for streaming users
-            camera: 5      // 5 XP for users with camera on
+            muted: 1,      // 1 XP/min for muted users
+            talking: 2,    // 2 XP/min for talking users (unmuted)
+            streaming: 3,  // 3 XP/min for streaming users
+            camera: 5      // 5 XP/min for users with camera on
         };
         
         // Start cleanup interval
         this.startCleanupInterval();
     }
 
-    // Calculate level from XP (200 XP per level, matches chat XP)
+    // Progressive XP formula: XP for level n = 100 * n^2
     calculateLevel(xp) {
-        return Math.floor(xp / 200);
+        return Math.floor(Math.sqrt(xp / 100));
     }
 
-    // Calculate XP needed for next level
     calculateXPForLevel(level) {
-        return 200 * level;
+        return 100 * level * level;
     }
 
-    // Calculate XP needed for next level from current XP
     calculateXPToNextLevel(currentXP) {
         const currentLevel = this.calculateLevel(currentXP);
         const nextLevelXP = this.calculateXPForLevel(currentLevel + 1);
         return nextLevelXP - currentXP;
+    }
+
+    getProgress(currentXP) {
+        const currentLevel = this.calculateLevel(currentXP);
+        const currentLevelXP = this.calculateXPForLevel(currentLevel);
+        const nextLevelXP = this.calculateXPForLevel(currentLevel + 1);
+        return {
+            percent: Math.round(((currentXP - currentLevelXP) / (nextLevelXP - currentLevelXP)) * 100),
+            current: currentXP - currentLevelXP,
+            needed: nextLevelXP - currentLevelXP
+        };
     }
 
     // Check if user is rate limited
@@ -295,7 +306,7 @@ class XPManager {
     }
 
     // Add XP to user
-    async addXP(userId, guildId, xpAmount, voiceMinutes = 0) {
+    async addXP(userId, guildId, xpAmount, voiceMinutes = 0, announceChannel = null) {
         try {
             // Use findOneAndUpdate with upsert to handle duplicates safely
             let result = await User.findOne({ userId, guildId });
@@ -332,6 +343,9 @@ class XPManager {
                 result.lastVCXP = now;
                 result.lastXPTimestamp = now;
             }
+            if (voiceMinutes === 0) {
+                result.chatXP = (result.chatXP || 0) + xpToAward;
+            }
             result.lastSeen = new Date();
 
             // Calculate and update level
@@ -341,6 +355,18 @@ class XPManager {
             if (newLevel !== oldLevel) {
                 result.level = newLevel;
                 await result.save();
+                // Announce level up if channel is provided
+                if (announceChannel) {
+                    let milestoneMsg = '';
+                    if ([5, 10, 25, 50, 100].includes(result.level)) {
+                        milestoneMsg = `\n**Milestone!** You reached level ${result.level} and unlocked a new badge!`;
+                    }
+                    try {
+                        await announceChannel.send({
+                            content: `<@${userId}>, congrats! You reached level ${result.level}! \ud83c\udf89${milestoneMsg}`
+                        });
+                    } catch {}
+                }
             } else {
                 await result.save();
             }
@@ -371,26 +397,30 @@ class XPManager {
 
         } catch (error) {
             console.error('Error adding XP:', error);
-            
             // If it's still a duplicate key error, try to find and update the existing user
             if (error.code === 11000) {
                 try {
-                    // // console.log(`Attempting to update existing user ${userId} in guild ${guildId}`);
                     const existingUser = await User.findOne({ userId, guildId });
-                    
                     if (existingUser) {
                         const oldLevel = existingUser.level;
                         const oldXP = existingUser.xp;
-                        
                         existingUser.xp += xpAmount;
                         existingUser.level = this.calculateLevel(existingUser.xp);
                         existingUser.voiceTime += voiceMinutes;
                         existingUser.lastSeen = new Date();
-                        
                         await existingUser.save();
-                        
-                        // // console.log(`User ${userId}: XP ${oldXP} -> ${existingUser.xp}, Level ${oldLevel} -> ${existingUser.level}`);
-                        
+                        // Announce level up if channel is provided
+                        if (announceChannel && existingUser.level > oldLevel) {
+                            let milestoneMsg = '';
+                            if ([5, 10, 25, 50, 100].includes(existingUser.level)) {
+                                milestoneMsg = `\n**Milestone!** You reached level ${existingUser.level} and unlocked a new badge!`;
+                            }
+                            try {
+                                await announceChannel.send({
+                                    content: `<@${userId}>, congrats! You reached level ${existingUser.level}! \ud83c\udf89${milestoneMsg}`
+                                });
+                            } catch {}
+                        }
                         return {
                             xpGained: xpAmount,
                             totalXP: existingUser.xp,
@@ -403,7 +433,6 @@ class XPManager {
                     console.error('Error in retry attempt:', retryError);
                 }
             }
-            
             return null;
         }
     }
@@ -461,6 +490,67 @@ class XPManager {
             console.error('Error getting leaderboard:', error);
             return [];
         }
+    }
+
+    // Aggregate leaderboard for a given period and type
+    async getTimeFilteredLeaderboard(guildId, type = 'xp', period = 'all', limit = 1000) {
+        if (period === 'all') {
+            // Use existing all-time leaderboard
+            return this.getLeaderboard(guildId, limit);
+        }
+        // Calculate date range
+        let days = 7;
+        if (period === 'monthly') days = 30;
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - days);
+        startDate.setHours(0, 0, 0, 0);
+        // Aggregate chat XP
+        let chatAgg = [];
+        if (type === 'chatXP' || type === 'xp') {
+            chatAgg = await DailyChatActivity.aggregate([
+                { $match: { guildId, date: { $gte: startDate } } },
+                { $group: {
+                    _id: '$userId',
+                    chatXP: { $sum: '$chatXP' },
+                    username: { $last: '$username' }
+                } }
+            ]);
+        }
+        // Aggregate VC XP
+        let vcAgg = [];
+        if (type === 'vcXP' || type === 'xp') {
+            vcAgg = await DailyVoiceActivity.aggregate([
+                { $match: { guildId, date: { $gte: startDate } } },
+                { $group: {
+                    _id: '$userId',
+                    vcXP: { $sum: '$xpEarned' },
+                    voiceTime: { $sum: '$voiceMinutes' },
+                    username: { $last: '$username' }
+                } }
+            ]);
+        }
+        // Merge results
+        const userMap = new Map();
+        for (const c of chatAgg) {
+            userMap.set(c._id, { userId: c._id, chatXP: c.chatXP, vcXP: 0, voiceTime: 0, username: c.username });
+        }
+        for (const v of vcAgg) {
+            if (userMap.has(v._id)) {
+                userMap.get(v._id).vcXP = v.vcXP;
+                userMap.get(v._id).voiceTime = v.voiceTime;
+            } else {
+                userMap.set(v._id, { userId: v._id, chatXP: 0, vcXP: v.vcXP, voiceTime: v.voiceTime, username: v.username });
+            }
+        }
+        // Calculate combined XP and level
+        const users = Array.from(userMap.values()).map(u => {
+            const xp = (type === 'chatXP') ? u.chatXP : (type === 'vcXP') ? u.vcXP : (u.chatXP + u.vcXP);
+            const level = this.calculateLevel(xp);
+            return { ...u, xp, level };
+        });
+        // Sort and limit
+        users.sort((a, b) => (b[type] || b.xp || 0) - (a[type] || a.xp || 0));
+        return users.slice(0, limit);
     }
 
     // Reset user's XP
