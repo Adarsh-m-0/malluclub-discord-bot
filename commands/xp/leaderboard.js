@@ -316,24 +316,24 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
     const responseOptions = { 
         embeds: [leaderboardEmbed], 
         components: [row, filterRow],
-        fetchReply: true // This allows us to get the message object
+        fetchReply: true
     };
 
     let message;
     try {
-        // Handle the initial command interaction
-        if (!interaction.isButton() && !interaction.isStringSelectMenu()) {
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.deferReply();
-            }
-            message = await interaction.editReply(responseOptions);
-        }
-        // Handle button/select menu interactions
-        else {
-            if (!interaction.deferred) {
-                await interaction.deferUpdate();
-            }
-            message = await interaction.editReply(responseOptions);
+        // We've already deferred the reply at the start of the function
+        // Now we just need to edit the reply with our content
+        message = await interaction.editReply(responseOptions).catch(async (err) => {
+            console.error('Failed to edit reply:', err);
+            // If edit fails, try to send a new reply
+            return await interaction.followUp({
+                ...responseOptions,
+                ephemeral: true
+            });
+        });
+
+        if (!message) {
+            throw new Error('Failed to send leaderboard message');
         }
     } catch (error) {
         console.error('Error sending leaderboard response:', error);
@@ -355,23 +355,29 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
     }
 
     // Collector options with proper cleanup
+    // More conservative collector options
     const collectorOptions = {
-        time: 300000, // 5 minutes
-        filter: i => i.user.id === userId,
-        max: 100 // Prevent infinite interactions
-    };
+        time: 180000, // 3 minutes
+        filter: i => i.user.id === userId && !i.deferred, // Only accept non-deferred interactions
+        max: 50, // More conservative limit
+        dispose: true // Clean up deleted messages
 
     // Combined collector for both buttons and select menu
     const collector = message.createMessageComponentCollector({
         ...collectorOptions
     });
 
+    // Track active interactions to prevent duplicates
+    const activeInteractions = new Set();
+    
     collector.on('collect', async (i) => {
+        // Prevent duplicate interactions
+        if (activeInteractions.has(i.id)) return;
+        activeInteractions.add(i.id);
+
         try {
-            // Don't defer again if already deferred
-            if (!i.deferred) {
-                await i.deferUpdate().catch(() => {});
-            }
+            // Always defer immediately
+            await i.deferUpdate().catch(() => {});
 
             if (i.isButton()) {
                 let newPage = page;
@@ -384,7 +390,13 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
                         break;
                 }
                 if (newPage !== page) {
-                    await showLeaderboard(i, newPage, type, period, sort);
+                    await showLeaderboard(i, newPage, type, period, sort).catch(async (error) => {
+                        console.error('Error updating leaderboard:', error);
+                        await i.followUp({
+                            content: 'Failed to update the leaderboard. Please try again.',
+                            ephemeral: true
+                        }).catch(() => {});
+                    });
                 }
             } else if (i.isStringSelectMenu()) {
                 const selected = i.values[0];
