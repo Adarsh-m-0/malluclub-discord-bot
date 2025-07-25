@@ -376,23 +376,12 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         return;
     }
 
-    // Set up collector for all component types with improved filtering
+    // Set up collector for all component types with simplified filtering
     const collector = message.createMessageComponentCollector({
-        time: 120000, // Reduced to 2 minutes to prevent expired interactions
+        time: 120000, // 2 minutes timeout
         filter: i => {
             // Only allow the original user to interact
             if (i.user.id !== userId) return false;
-            
-            // Check if interaction is too old
-            const interactionAge = Date.now() - i.createdTimestamp;
-            if (interactionAge > 14 * 60 * 1000) { // 14 minutes max
-                return false;
-            }
-            
-            // Check if this interaction was already processed globally
-            if (i.client._processedInteractions?.has(i.id)) {
-                return false;
-            }
             
             // Only allow our specific component interactions
             if (i.isButton()) {
@@ -408,26 +397,25 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         max: 50
     });
 
-    // Initialize global interaction tracking if not exists
-    if (!collector.client._processedInteractions) {
-        collector.client._processedInteractions = new Set();
-    }
-
-    // Track active interactions to prevent duplicates
-    const activeInteractions = new Set();
+    // Simple interaction tracking to prevent duplicate processing
+    const processedInteractions = new Set();
     
     collector.on('collect', async (i) => {
         try {
-            // Add to global processed interactions immediately
-            i.client._processedInteractions.add(i.id);
+            // Prevent duplicate processing
+            if (processedInteractions.has(i.id)) {
+                console.log('Duplicate interaction prevented:', i.id);
+                return;
+            }
+            processedInteractions.add(i.id);
             
-            // Clean up old processed interactions (keep last 1000)
-            if (i.client._processedInteractions.size > 1000) {
-                const oldInteractions = Array.from(i.client._processedInteractions).slice(0, 500);
-                oldInteractions.forEach(id => i.client._processedInteractions.delete(id));
+            // Clean up old interactions (keep last 20)
+            if (processedInteractions.size > 20) {
+                const oldInteractions = Array.from(processedInteractions).slice(0, 10);
+                oldInteractions.forEach(id => processedInteractions.delete(id));
             }
             
-            // Verify user permissions first
+            // Verify user permissions
             if (i.user.id !== userId) {
                 if (!i.replied && !i.deferred) {
                     await i.reply({ 
@@ -438,70 +426,18 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
                 return;
             }
 
-            // Track active interactions using interaction ID
-            const interactionKey = i.id;
-            if (activeInteractions.has(interactionKey)) {
-                console.log('Duplicate interaction prevented:', interactionKey);
-                return;
-            }
-            activeInteractions.add(interactionKey);
-
-            // Clear the interaction after processing
-            setTimeout(() => activeInteractions.delete(interactionKey), 5000);
-
-            // Add user-specific cooldown to prevent rapid clicking
-            const userCooldownKey = `${userId}_leaderboard`;
-            const now = Date.now();
-            if (!i.client._userCooldowns) {
-                i.client._userCooldowns = new Map();
-            }
-            
-            const lastInteraction = i.client._userCooldowns.get(userCooldownKey);
-            if (lastInteraction && now - lastInteraction < 1000) { // 1 second cooldown
-                console.log('User cooldown active, ignoring interaction');
-                activeInteractions.delete(interactionKey);
-                return;
-            }
-            i.client._userCooldowns.set(userCooldownKey, now);
-
-            // Check if interaction is still valid and within time limits
-            const interactionAge = Date.now() - i.createdTimestamp;
-            const maxInteractionAge = 14.5 * 60 * 1000; // 14.5 minutes (15min - safety buffer)
-            
-            if (interactionAge > maxInteractionAge) {
-                console.log('Interaction expired, ignoring:', interactionKey);
-                activeInteractions.delete(interactionKey);
-                return;
-            }
-
-            // Check interaction state and defer immediately - simplified approach
+            // Defer the interaction immediately
             if (!i.deferred && !i.replied) {
                 try {
                     await i.deferUpdate();
                 } catch (deferError) {
                     console.error('Failed to defer interaction:', deferError);
-                    
-                    // Handle specific Discord API errors
-                    if (deferError.code === 10062) {
-                        console.log('Interaction expired or unknown, cleaning up');
-                    } else if (deferError.code === 40060) {
-                        console.log('Interaction already acknowledged');
-                    } else if (deferError.message === 'Defer timeout') {
-                        console.log('Defer operation timed out');
-                    }
-                    
-                    // Clean up and exit if we can't defer
-                    activeInteractions.delete(interactionKey);
+                    processedInteractions.delete(i.id);
                     return;
                 }
-            } else {
-                // Interaction was already handled
-                console.log('Interaction already processed, skipping');
-                activeInteractions.delete(interactionKey);
-                return;
             }
 
-            // Handle button interactions with smooth transitions
+            // Handle button interactions
             if (i.isButton()) {
                 let newPage = page;
                 
@@ -511,35 +447,18 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
                     newPage = page + 1;
                 } else if (i.customId === 'leaderboard_page') {
                     // Page button clicked, no action needed
-                    activeInteractions.delete(interactionKey);
                     return;
                 }
 
                 if (newPage !== page) {
-                    try {
-                        // Clean up before starting new leaderboard
-                        activeInteractions.delete(interactionKey);
-                        await showLeaderboard(i, newPage, type, period, sort);
-                    } catch (showError) {
-                        console.error('Error updating leaderboard for button:', showError);
-                        // If showing leaderboard fails, send error message
-                        if (i.deferred && !i.replied) {
-                            await i.editReply({
-                                content: 'There was an error updating the leaderboard page. Please try again.',
-                                components: []
-                            }).catch(() => {});
-                        }
-                    }
-                } else {
-                    // No page change needed, clean up
-                    activeInteractions.delete(interactionKey);
+                    console.log(`Page navigation: ${page} -> ${newPage}`);
+                    await showLeaderboard(i, newPage, type, period, sort);
                 }
             } 
-            // Handle select menu interactions with smooth transitions
+            // Handle select menu interactions
             else if (i.isStringSelectMenu() && i.customId === 'leaderboard_filter') {
                 if (!i.values || i.values.length === 0) {
                     console.error('No values in select menu interaction');
-                    activeInteractions.delete(interactionKey);
                     return;
                 }
 
@@ -562,27 +481,14 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
                 newSort = newType;
 
                 // Always reset to page 1 when changing filters
-                try {
-                    // Clean up before starting new leaderboard
-                    activeInteractions.delete(interactionKey);
-                    await showLeaderboard(i, 1, newType, newPeriod, newSort);
-                } catch (showError) {
-                    console.error('Error updating leaderboard for select menu:', showError);
-                    // If showing leaderboard fails, send error message
-                    if (i.deferred && !i.replied) {
-                        await i.editReply({
-                            content: 'There was an error updating the leaderboard filter. Please try again.',
-                            components: []
-                        }).catch(() => {});
-                    }
-                }
+                console.log(`Filter change: type=${newType}, period=${newPeriod}`);
+                await showLeaderboard(i, 1, newType, newPeriod, newSort);
             }
         } catch (error) {
             console.error('Error handling interaction:', error);
             
-            // Clean up the interaction key using interaction ID
-            const interactionKey = i.id;
-            activeInteractions.delete(interactionKey);
+            // Clean up the processed interaction
+            processedInteractions.delete(i.id);
             
             try {
                 // Only send error message if we haven't already responded
@@ -603,11 +509,8 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
     });
 
     collector.on('end', async (collected, reason) => {
-        // Clean up global tracking for this user
-        const userCooldownKey = `${userId}_leaderboard`;
-        if (collector.client._userCooldowns) {
-            collector.client._userCooldowns.delete(userCooldownKey);
-        }
+        // Clean up processed interactions
+        processedInteractions.clear();
         
         // Only disable components if the message still exists and hasn't been replaced
         try {
@@ -621,9 +524,11 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
                 
                 await message.edit({ 
                     components: [disabledNavigationRow, disabledFilterRow]
-                });
+                }).catch(() => {}); // Ignore errors if message was deleted
             }
-        } catch {} // Ignore if message was deleted or can't be edited
+        } catch (error) {
+            console.error('Error disabling components:', error);
+        }
     });
 
     } catch (globalError) {
