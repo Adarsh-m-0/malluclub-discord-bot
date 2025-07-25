@@ -7,9 +7,9 @@ const BADGES = ['🥇', '🥈', '🥉'];
 const MILESTONE_LEVELS = [50, 100];
 
 // Fixed width constants for perfect alignment
-const POSITION_WIDTH = 4;   // " 1. "
-const NAME_WIDTH = 18;      // Username display width
-const XP_WIDTH = 12;        // XP value width
+const POSITION_WIDTH = 3;
+const NAME_WIDTH = 18;  // Slightly reduced for better mobile display
+const XP_WIDTH = 8;     // Adjusted for typical XP values with commas
 const LEVEL_WIDTH = 8;      // "Lv 100" width
 
 module.exports = {
@@ -88,62 +88,39 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
     const userEntry = leaderboard.find(e => e.userId === userId);
     const userRank = userEntry ? leaderboard.indexOf(userEntry) + 1 : null;
 
-    // Build leaderboard text with perfect alignment
-    let leaderboardText = `#${' '.repeat(POSITION_WIDTH - 2)}${'Name'.padEnd(NAME_WIDTH)}${'XP'.padStart(XP_WIDTH)}\n`;
-    leaderboardText += '─'.repeat(POSITION_WIDTH + NAME_WIDTH + XP_WIDTH + LEVEL_WIDTH) + '\n';
-    
+    // Build leaderboard text with mentions
+    let leaderboardText = '';
     if (pageEntries.length === 0) {
-        leaderboardText += `No users found\n`;
+        leaderboardText += 'No users found';
     } else {
         for (let i = 0; i < pageEntries.length; i++) {
             const entry = pageEntries[i];
             const rank = startIdx + i + 1;
-            let username;
             
-            try {
-                username = (await interaction.guild.members.fetch(entry.userId).catch(() => null))?.displayName || 'Unknown';
-            } catch { username = 'Unknown'; }
+            // Get member safely
+            const member = await interaction.guild.members.fetch(entry.userId).catch(() => null);
             
-            // Truncate username to fit column
-            if (username.length > NAME_WIDTH) {
-                username = username.substring(0, NAME_WIDTH - 1) + '…';
-            }
+            // Add rank-based badges
+            let badge = rank <= 3 ? BADGES[rank - 1] : entry.level >= 100 ? '💎' : entry.level >= 50 ? '✨' : '•';
             
-            // Determine badges
-            let badge = '';
-            if (rank <= 3) {
-                badge = BADGES[rank - 1] + ' ';
-            } else if (entry.level >= 100) {
-                badge = '💎 ';
-            } else if (entry.level >= 50) {
-                badge = '✨ ';
-            }
+            // Format the entry line with mention
+            const mention = member ? `<@${entry.userId}>` : 'Unknown User';
+            const levelInfo = `Level ${entry.level}`;
+            const xpStr = entry.xp.toLocaleString();
             
-            // Highlight current user
-            const highlight = entry.userId === userId ? '> ' : '  ';
-            const position = `${rank}.`.padStart(POSITION_WIDTH);
-            const xpStr = entry.xp.toLocaleString().padStart(XP_WIDTH);
-            
-            // First line: Position, Badge, Username, XP
-            leaderboardText += `${highlight}${badge}${position} ${username.padEnd(NAME_WIDTH)}${xpStr}\n`;
-            
-            // Second line: Level indicator
-            const levelStr = `Lv ${entry.level}`.padEnd(LEVEL_WIDTH);
-            leaderboardText += `${' '.repeat(POSITION_WIDTH + 1)}${levelStr}\n`;
+            leaderboardText += `${badge} **#${rank}** ${mention} • ${levelInfo} • ${xpStr} XP\n`;
         }
     }
     
-    // Add user's position if not on current page
+    // Add user's position if not on current page (no level)
     if (userEntry && (userRank < startIdx + 1 || userRank > endIdx)) {
         let username;
         try {
             username = (await interaction.guild.members.fetch(userEntry.userId).catch(() => null))?.displayName || 'Unknown';
         } catch { username = 'Unknown'; }
-        
         if (username.length > NAME_WIDTH) {
             username = username.substring(0, NAME_WIDTH - 1) + '…';
         }
-        
         let badge = '';
         if (userRank <= 3) {
             badge = BADGES[userRank - 1] + ' ';
@@ -152,14 +129,10 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         } else if (userEntry.level >= 50) {
             badge = '✨ ';
         }
-        
         const position = `${userRank}.`.padStart(POSITION_WIDTH);
         const xpStr = userEntry.xp.toLocaleString().padStart(XP_WIDTH);
-        const levelStr = `Lv ${userEntry.level}`.padEnd(LEVEL_WIDTH);
-        
-        leaderboardText += '\n' + '─'.repeat(POSITION_WIDTH + NAME_WIDTH + XP_WIDTH + LEVEL_WIDTH) + '\n';
-        leaderboardText += `> ${badge}${position} ${username.padEnd(NAME_WIDTH)}${xpStr}\n`;
-        leaderboardText += `${' '.repeat(POSITION_WIDTH + 1)}${levelStr}   (Your position)\n`;
+        leaderboardText += '\n' + '─'.repeat(POSITION_WIDTH + NAME_WIDTH + XP_WIDTH) + '\n';
+        leaderboardText += `> ${badge}${position} ${username.padEnd(NAME_WIDTH)}${xpStr}   (Your position)\n`;
     }
 
     // Truncate if too long for Discord embed
@@ -184,10 +157,29 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         }
     }
 
+    // Create a more user-friendly title
     const titleSuffix = period !== 'all' ? ` • ${period.charAt(0).toUpperCase() + period.slice(1)}` : '';
+    const title = `${type === 'xp' ? 'Combined' : type === 'chatXP' ? 'Chat' : 'VC'} XP Leaderboard${titleSuffix}`;
+
+    // Add user's progress section if they have XP
+    let userProgress = '';
+    if (userEntry) {
+        const currentLevelXP = XPManager.calculateXPForLevel(userEntry.level);
+        const nextLevelXP = XPManager.calculateXPForLevel(userEntry.level + 1);
+        const progressXP = userEntry.xp - currentLevelXP;
+        const neededXP = nextLevelXP - currentLevelXP;
+        
+        if (neededXP > 0) {
+            const progressPercentage = Math.min(100, Math.round((progressXP / neededXP) * 100));
+            userProgress = `\n\n**Your Progress**\n`;
+            userProgress += `Level ${userEntry.level} → ${userEntry.level + 1}\n`;
+            userProgress += `${progressXP.toLocaleString()} / ${neededXP.toLocaleString()} XP (${progressPercentage}%)`;
+        }
+    }
+
     const leaderboardEmbed = EmbedTemplates.createEmbed({
-        title: `${type === 'xp' ? 'Combined' : type === 'chatXP' ? 'Chat' : 'VC'} XP Leaderboard${titleSuffix}`,
-        description: `\`\`\`\n${leaderboardText}\`\`\`${progressBar ? `\n${progressBar}` : ''}${truncated ? '\n*Leaderboard truncated for display*' : ''}`,
+        title: title,
+        description: `${leaderboardText}${userProgress}${truncated ? '\n\n*Some entries hidden due to length*' : ''}`,
         color: getLeaderboardColor(pageEntries.length),
         footer: {
             text: `Page ${page}/${totalPagesSafe}${userEntry ? ` • Your rank: #${userRank}` : ''}`,
@@ -246,52 +238,102 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         new ButtonBuilder().setCustomId('leaderboard_next').setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(page === totalPagesSafe)
     );
 
-    // Response handling
-    const responseOptions = { embeds: [leaderboardEmbed], components: [row, filterRow] };
-    if (interaction.isButton?.() || interaction.isStringSelectMenu?.()) {
-        await interaction.update(responseOptions);
-    } else if (interaction.replied || interaction.deferred) {
-        await interaction.editReply(responseOptions);
-    } else {
-        await interaction.reply(responseOptions);
+    // Response handling with error catching
+    const responseOptions = { 
+        embeds: [leaderboardEmbed], 
+        components: [row, filterRow],
+        fetchReply: true // This allows us to get the message object
+    };
+
+    let message;
+    try {
+        if (interaction.isButton?.() || interaction.isStringSelectMenu?.()) {
+            message = await interaction.update(responseOptions);
+        } else if (interaction.replied || interaction.deferred) {
+            message = await interaction.editReply(responseOptions);
+        } else {
+            message = await interaction.reply(responseOptions);
+        }
+    } catch (error) {
+        console.error('Error sending leaderboard response:', error);
+        try {
+            await interaction.followUp({ 
+                content: 'There was an error displaying the leaderboard. Please try again.',
+                ephemeral: true 
+            });
+        } catch {} // Ignore if this fails too
+        return;
     }
 
-    // Set up collectors for Button and StringSelectMenu separately
-    const buttonCollector = interaction.channel.createMessageComponentCollector({
-        componentType: ComponentType.Button,
-        time: 60000,
-        filter: i => i.user.id === userId
-    });
-    buttonCollector.on('collect', async i => {
-        if (i.customId === 'leaderboard_prev') {
-            await showLeaderboard(i, page - 1, type, period, sort);
-        } else if (i.customId === 'leaderboard_next') {
-            await showLeaderboard(i, page + 1, type, period, sort);
-        }
-        await i.deferUpdate();
-    });
-    buttonCollector.on('end', () => {
-        // Optionally disable components after timeout
+    // Collector options with proper cleanup
+    const collectorOptions = {
+        time: 300000, // 5 minutes
+        filter: i => i.user.id === userId,
+        max: 100 // Prevent infinite interactions
+    };
+
+    // Combined collector for both buttons and select menu
+    const collector = message.createMessageComponentCollector({
+        ...collectorOptions
     });
 
-    const selectCollector = interaction.channel.createMessageComponentCollector({
-        componentType: ComponentType.StringSelect,
-        time: 60000,
-        filter: i => i.user.id === userId
+    collector.on('collect', async (i) => {
+        try {
+            await i.deferUpdate(); // Always defer first to prevent timeout
+
+            if (i.isButton()) {
+                switch (i.customId) {
+                    case 'leaderboard_prev':
+                        await showLeaderboard(i, page - 1, type, period, sort);
+                        break;
+                    case 'leaderboard_next':
+                        await showLeaderboard(i, page + 1, type, period, sort);
+                        break;
+                }
+            } else if (i.isStringSelectMenu()) {
+                const selected = i.values[0];
+                let newType = type, newPeriod = period, newSort = sort;
+
+                // Handle filter/sort selection
+                if (['xp', 'chatXP', 'vcXP'].includes(selected)) newType = selected;
+                if (['all', 'weekly', 'monthly'].includes(selected)) newPeriod = selected;
+                if (selected.startsWith('sort_')) {
+                    switch (selected) {
+                        case 'sort_xp': newSort = 'xp'; break;
+                        case 'sort_level': newSort = 'level'; break;
+                        case 'sort_voiceTime': newSort = 'voiceTime'; break;
+                    }
+                }
+
+                await showLeaderboard(i, 1, newType, newPeriod, newSort);
+            }
+        } catch (error) {
+            console.error('Error handling interaction:', error);
+            try {
+                await i.followUp({ 
+                    content: 'There was an error processing your request. Please try again.',
+                    ephemeral: true 
+                });
+            } catch {} // Ignore if this fails too
+        }
     });
-    selectCollector.on('collect', async i => {
-        const selected = i.values[0];
-        let newType = type, newPeriod = period, newSort = sort;
-        if (['xp', 'chatXP', 'vcXP'].includes(selected)) newType = selected;
-        if (['all', 'weekly', 'monthly'].includes(selected)) newPeriod = selected;
-        if (selected === 'sort_xp') newSort = 'xp';
-        if (selected === 'sort_level') newSort = 'level';
-        if (selected === 'sort_voiceTime') newSort = 'voiceTime';
-        await showLeaderboard(i, 1, newType, newPeriod, newSort);
-        await i.deferUpdate();
-    });
-    selectCollector.on('end', () => {
-        // Optionally disable components after timeout
+
+    collector.on('end', async (collected, reason) => {
+        // Only disable components if the message still exists and hasn't been replaced
+        try {
+            if (reason === 'time' || reason === 'limit') {
+                const disabledRow = new ActionRowBuilder().addComponents(
+                    row.components.map(button => ButtonBuilder.from(button).setDisabled(true))
+                );
+                const disabledFilterRow = new ActionRowBuilder().addComponents(
+                    filterRow.components.map(menu => StringSelectMenuBuilder.from(menu).setDisabled(true))
+                );
+                
+                await message.edit({ 
+                    components: [disabledRow, disabledFilterRow]
+                });
+            }
+        } catch {} // Ignore if message was deleted or can't be edited
     });
 }
 
