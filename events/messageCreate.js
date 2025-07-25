@@ -1,10 +1,11 @@
 const { Events } = require('discord.js');
 const User = require('../models/User');
 const XPManager = require('../utils/XPManager');
+const DailyChatActivity = require('../models/DailyChatActivity');
 
 // Chat XP configuration
-const CHAT_XP_AMOUNT = 2; // XP per valid message
-const CHAT_XP_COOLDOWN = 20 * 1000; // 20 seconds cooldown per user
+const CHAT_XP_AMOUNT = 5; // XP per valid message
+const CHAT_XP_COOLDOWN = 30 * 1000; // 30 seconds cooldown per user
 const MIN_MESSAGE_LENGTH = 5; // Minimum length for a message to count
 const DAILY_XP_CAP = 1000; // Max XP a user can earn per day
 const LINK_REGEX = /https?:\/\//i;
@@ -66,15 +67,27 @@ module.exports = {
             userData.lastMessageXP = now;
             userData.lastXPTimestamp = now;
             userData.lastMessageContent = content;
+            // Log to DailyChatActivity for time-based leaderboards
+            await DailyChatActivity.updateDailyActivity(
+                message.author.id,
+                message.guild.id,
+                message.author.username,
+                xpToAward
+            );
 
-            // Level up logic (200 XP per level)
-            let nextLevelXP = 200 * (userData.level + 1);
-            if (userData.xp >= nextLevelXP) {
-                userData.level += 1;
-                // Optionally, notify the user of level up
+            // Level up logic (progressive XP per level)
+            const XPManager = require('../utils/XPManager');
+            const newLevel = XPManager.calculateLevel(userData.xp);
+            if (newLevel > userData.level) {
+                userData.level = newLevel;
+                // Announce level up with milestone message
+                let milestoneMsg = '';
+                if ([5, 10, 25, 50, 100].includes(userData.level)) {
+                    milestoneMsg = `\n**Milestone!** You reached level ${userData.level} and unlocked a new badge!`;
+                }
                 try {
                     await message.channel.send({
-                        content: `${message.author}, congrats! You reached level ${userData.level}! 🎉`
+                        content: `${message.author}, congrats! You reached level ${userData.level}! 🎉${milestoneMsg}`
                     });
                 } catch {}
             }

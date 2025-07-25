@@ -36,8 +36,6 @@ module.exports = {
             const progressXP = userStats.xp - currentLevelXP;
             const neededXP = nextLevelXP - currentLevelXP;
             const progressPercentage = Math.round((progressXP / neededXP) * 100);
-
-            // Create progress bar with modern styling
             const progressBar = createProgressBar(progressPercentage);
 
             // Calculate voice time in hours and minutes
