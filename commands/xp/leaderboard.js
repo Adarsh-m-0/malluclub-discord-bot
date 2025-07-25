@@ -279,17 +279,32 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         timestamp: new Date()
     });
 
-    // Filter select menu
+    // Filter select menu with categories
     const filterOptions = [
-        { label: 'Combined XP', value: 'xp' },
-        { label: 'Chat XP', value: 'chatXP' },
-        { label: 'VC XP', value: 'vcXP' },
-        { label: 'All-time', value: 'all' },
-        { label: 'Weekly', value: 'weekly' },
-        { label: 'Monthly', value: 'monthly' },
-        { label: 'Sort by XP', value: 'sort_xp' },
-        { label: 'Sort by Level', value: 'sort_level' },
-        { label: 'Sort by Activity', value: 'sort_voiceTime' },
+        {
+            label: 'XP Type',
+            options: [
+                { label: 'Combined XP', value: 'xp', description: 'Show total XP from all sources' },
+                { label: 'Chat XP', value: 'chatXP', description: 'Show XP from chat messages' },
+                { label: 'VC XP', value: 'vcXP', description: 'Show XP from voice chat' }
+            ]
+        },
+        {
+            label: 'Time Period',
+            options: [
+                { label: 'All-time', value: 'all', description: 'Show all-time rankings' },
+                { label: 'Weekly', value: 'weekly', description: 'Show this week\'s rankings' },
+                { label: 'Monthly', value: 'monthly', description: 'Show this month\'s rankings' }
+            ]
+        },
+        {
+            label: 'Sort By',
+            options: [
+                { label: 'XP', value: 'sort_xp', description: 'Sort by total XP' },
+                { label: 'Level', value: 'sort_level', description: 'Sort by level' },
+                { label: 'Activity', value: 'sort_voiceTime', description: 'Sort by voice activity' }
+            ]
+        }
     ];
     
     // Set only one default selection for the filter menu (Discord only allows one)
@@ -371,12 +386,11 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         return;
     }
 
-    // Set up collector for interactions
+    // Set up collector for all component types
     const collector = message.createMessageComponentCollector({
         time: 180000, // 3 minutes
-        filter: i => i.user.id === userId,
-        max: 50,
-        componentType: ComponentType.Button | ComponentType.StringSelect
+        filter: i => i.user.id === userId && (i.isButton() || i.isStringSelectMenu()),
+        max: 50
     });
 
     // Track active interactions to prevent duplicates
@@ -384,29 +398,34 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
     
     collector.on('collect', async (i) => {
         try {
-            // Defer the update immediately
-            await i.deferUpdate().catch(() => {});
+            // Verify the interaction is from the same user
+            if (i.user.id !== userId) {
+                await i.reply({ content: 'You cannot use this menu.', ephemeral: true });
+                return;
+            }
+
+            // Handle the interaction
+            try {
+                await i.deferUpdate();
+            } catch (err) {
+                console.error('Failed to defer update:', err);
+                return;
+            }
 
             if (i.isButton()) {
-                let newPage = page;
                 switch (i.customId) {
                     case 'leaderboard_prev':
-                        newPage = Math.max(1, page - 1);
+                        if (page > 1) {
+                            await showLeaderboard(i, page - 1, type, period, sort);
+                        }
                         break;
                     case 'leaderboard_next':
-                        newPage = Math.min(totalPagesSafe, page + 1);
+                        if (page < totalPagesSafe) {
+                            await showLeaderboard(i, page + 1, type, period, sort);
+                        }
                         break;
                 }
-                if (newPage !== page) {
-                    await showLeaderboard(i, newPage, type, period, sort).catch(async (error) => {
-                        console.error('Error updating leaderboard:', error);
-                        await i.followUp({
-                            content: 'Failed to update the leaderboard. Please try again.',
-                            ephemeral: true
-                        }).catch(() => {});
-                    });
-                }
-            } else if (i.isStringSelectMenu()) {
+            } else if (i.isStringSelectMenu() && i.customId === 'leaderboard_filter') {
                 const selected = i.values[0];
                 let newType = type, newPeriod = period, newSort = sort;
 
@@ -421,16 +440,29 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
                     }
                 }
 
-                await showLeaderboard(i, 1, newType, newPeriod, newSort);
+                try {
+                    await showLeaderboard(i, 1, newType, newPeriod, newSort);
+                } catch (err) {
+                    console.error('Failed to update leaderboard:', err);
+                    await i.followUp({
+                        content: 'Failed to update the leaderboard. Please try again.',
+                        ephemeral: true
+                    }).catch(console.error);
+                }
             }
         } catch (error) {
             console.error('Error handling interaction:', error);
             try {
-                await i.followUp({ 
-                    content: 'There was an error processing your request. Please try again.',
-                    ephemeral: true 
-                });
-            } catch {} // Ignore if this fails too
+                // Only send error message if we haven't already sent a response
+                if (!i.replied && !i.deferred) {
+                    await i.reply({ 
+                        content: 'There was an error processing your request. Please try again.',
+                        ephemeral: true 
+                    });
+                }
+            } catch (e) {
+                console.error('Failed to send error message:', e);
+            }
         }
     });
 
