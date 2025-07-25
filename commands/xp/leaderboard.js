@@ -209,16 +209,29 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         { label: 'Sort by Activity', value: 'sort_voiceTime' },
     ];
     
-    // Set default selections
-    filterOptions.forEach(opt => {
-        opt.default = (
-            opt.value === type || 
-            opt.value === period || 
-            (sort === 'xp' && opt.value === 'sort_xp') ||
-            (sort === 'level' && opt.value === 'sort_level') ||
-            (sort === 'voiceTime' && opt.value === 'sort_voiceTime')
-        );
-    });
+    // Set only one default selection for the filter menu (Discord only allows one)
+    filterOptions.forEach(opt => { opt.default = false; });
+    // Priority: type > period > sort
+    let defaultSet = false;
+    for (const opt of filterOptions) {
+        if (!defaultSet && opt.value === type) {
+            opt.default = true;
+            defaultSet = true;
+        }
+    }
+    if (!defaultSet) {
+        for (const opt of filterOptions) {
+            if (!defaultSet && opt.value === period) {
+                opt.default = true;
+                defaultSet = true;
+            }
+        }
+    }
+    if (!defaultSet) {
+        if (sort === 'xp' && filterOptions.find(opt => opt.value === 'sort_xp')) filterOptions.find(opt => opt.value === 'sort_xp').default = true;
+        else if (sort === 'level' && filterOptions.find(opt => opt.value === 'sort_level')) filterOptions.find(opt => opt.value === 'sort_level').default = true;
+        else if (sort === 'voiceTime' && filterOptions.find(opt => opt.value === 'sort_voiceTime')) filterOptions.find(opt => opt.value === 'sort_voiceTime').default = true;
+    }
 
     const filterRow = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
