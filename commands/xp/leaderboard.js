@@ -32,25 +32,58 @@ module.exports = {
             }
             
             // Build minimal, informative leaderboard text
-            let leaderboardText = `Pos  Name             Lv   XP     Chat  VC\n`;
-            leaderboardText += `---------------------------------------------\n`;
-            for (let i = 0; i < leaderboard.length; i++) {
-                const entry = leaderboard[i];
-                const user = await interaction.guild.members.fetch(entry.userId).catch(() => null);
-                let username = user ? user.displayName : 'Unknown User';
-                if (username.length > 13) username = username.slice(0, 11) + '…';
-                const position = (i + 1).toString().padStart(2, ' ');
-                // Calculate level from XP to ensure accuracy
-                const level = Math.floor(entry.xp / 200);
-                leaderboardText += `${position}. ${username.padEnd(13, ' ')} ${level.toString().padStart(2, ' ')} ${entry.xp.toLocaleString().padStart(6, ' ')} ${entry.chatXP.toLocaleString().padStart(5, ' ')} ${entry.vcXP.toLocaleString().padStart(5, ' ')}\n`;
+            let leaderboardText = `#  Name         Lv   XP\n`;
+            leaderboardText += `------------------------\n`;
+            for (let i = 0; i < pageEntries.length; i++) {
+                const entry = pageEntries[i];
+                let username = (await interaction.guild.members.fetch(entry.userId).catch(() => null))?.displayName || 'Unknown';
+                if (username.length > 10) username = username.slice(0, 8) + '…';
+                const position = (startIdx + i + 1).toString().padStart(2, ' ');
+                // Badges
+                let badge = BADGES[startIdx + i] || '';
+                if (!badge && entry.level >= 100) badge = '💎';
+                else if (!badge && entry.level >= 50) badge = '✨';
+                // Highlight user
+                const highlight = entry.userId === userId ? '➡️ ' : '';
+                leaderboardText += `${highlight}${badge}${position}. ${username.padEnd(10, ' ')} ${entry.level.toString().padStart(2, ' ')} ${entry.xp.toLocaleString().padStart(5, ' ')}\n`;
             }
-
+            // If user not on page, show their entry at the bottom
+            if (userEntry && (userRank < startIdx + 1 || userRank > endIdx)) {
+                let username = (await interaction.guild.members.fetch(userEntry.userId).catch(() => null))?.displayName || 'Unknown';
+                if (username.length > 10) username = username.slice(0, 8) + '…';
+                let badge = BADGES[userRank - 1] || '';
+                if (!badge && userEntry.level >= 100) badge = '💎';
+                else if (!badge && userEntry.level >= 50) badge = '✨';
+                leaderboardText += `\n➡️${badge}${userRank.toString().padStart(2, ' ')}. ${username.padEnd(10, ' ')} ${userEntry.level.toString().padStart(2, ' ')} ${userEntry.xp.toLocaleString().padStart(5, ' ')}   (You)\n`;
+            }
+        
+            // Truncate if too long for Discord embed (4096 chars max)
+            let truncated = false;
+            let leaderboardDesc = leaderboardText;
+            if ((`\n\
+        ${leaderboardText}\
+        \``).length > 4000) {
+                leaderboardDesc = leaderboardText.slice(0, 3900) + '\n... (truncated)';
+                truncated = true;
+            }
+        
+            // Progress bar for user
+            let progressBar = '';
+            if (userEntry) {
+                const currentLevelXP = XPManager.calculateXPForLevel(userEntry.level);
+                const nextLevelXP = XPManager.calculateXPForLevel(userEntry.level + 1);
+                const progressXP = userEntry.xp - currentLevelXP;
+                const neededXP = nextLevelXP - currentLevelXP;
+                const progressPercentage = Math.round((progressXP / neededXP) * 100);
+                progressBar = `Progress: [${'▰'.repeat(Math.round(progressPercentage / 5))}${'▱'.repeat(20 - Math.round(progressPercentage / 5))}] ${progressXP}/${neededXP} XP`;
+            }
+        
             const leaderboardEmbed = EmbedTemplates.createEmbed({
-                title: `XP Leaderboard`,
-                description: '```\n' + leaderboardText + '```',
-                color: getLeaderboardColor(leaderboard.length),
+                title: `XP Leaderboard (${type.toUpperCase()}${period !== 'all' ? ' • ' + period.charAt(0).toUpperCase() + period.slice(1) : ''})`,
+                description: '```\n' + leaderboardDesc + '```' + (progressBar ? `\n${progressBar}` : '') + (truncated ? '\n*Leaderboard truncated for display*' : ''),
+                color: getLeaderboardColor(pageEntries.length),
                 footer: {
-                    text: `Keep earning XP to climb the ranks! • ${interaction.guild.name}`,
+                    text: `Page ${page}/${totalPagesSafe} • ${userEntry ? `You: #${userRank} of ${totalUsers}` : ''}`,
                     iconURL: interaction.guild.iconURL({ dynamic: true })
                 },
                 timestamp: new Date()
