@@ -243,36 +243,41 @@ async function showLeaderboard(interaction, customPage, customType, customPeriod
         await interaction.reply(responseOptions);
     }
 
-    // Set up collectors
-    const collector = interaction.channel.createMessageComponentCollector({
-        componentType: [ComponentType.Button, ComponentType.StringSelect],
+    // Set up collectors for Button and StringSelectMenu separately
+    const buttonCollector = interaction.channel.createMessageComponentCollector({
+        componentType: ComponentType.Button,
         time: 60000,
         filter: i => i.user.id === userId
     });
-
-    collector.on('collect', async i => {
-        if (i.isButton()) {
-            if (i.customId === 'leaderboard_prev') {
-                await showLeaderboard(i, page - 1, type, period, sort);
-            } else if (i.customId === 'leaderboard_next') {
-                await showLeaderboard(i, page + 1, type, period, sort);
-            }
-        } else if (i.isStringSelectMenu()) {
-            const selected = i.values[0];
-            let newType = type, newPeriod = period, newSort = sort;
-            
-            if (['xp', 'chatXP', 'vcXP'].includes(selected)) newType = selected;
-            if (['all', 'weekly', 'monthly'].includes(selected)) newPeriod = selected;
-            if (selected === 'sort_xp') newSort = 'xp';
-            if (selected === 'sort_level') newSort = 'level';
-            if (selected === 'sort_voiceTime') newSort = 'voiceTime';
-            
-            await showLeaderboard(i, 1, newType, newPeriod, newSort);
+    buttonCollector.on('collect', async i => {
+        if (i.customId === 'leaderboard_prev') {
+            await showLeaderboard(i, page - 1, type, period, sort);
+        } else if (i.customId === 'leaderboard_next') {
+            await showLeaderboard(i, page + 1, type, period, sort);
         }
         await i.deferUpdate();
     });
+    buttonCollector.on('end', () => {
+        // Optionally disable components after timeout
+    });
 
-    collector.on('end', () => {
+    const selectCollector = interaction.channel.createMessageComponentCollector({
+        componentType: ComponentType.StringSelect,
+        time: 60000,
+        filter: i => i.user.id === userId
+    });
+    selectCollector.on('collect', async i => {
+        const selected = i.values[0];
+        let newType = type, newPeriod = period, newSort = sort;
+        if (['xp', 'chatXP', 'vcXP'].includes(selected)) newType = selected;
+        if (['all', 'weekly', 'monthly'].includes(selected)) newPeriod = selected;
+        if (selected === 'sort_xp') newSort = 'xp';
+        if (selected === 'sort_level') newSort = 'level';
+        if (selected === 'sort_voiceTime') newSort = 'voiceTime';
+        await showLeaderboard(i, 1, newType, newPeriod, newSort);
+        await i.deferUpdate();
+    });
+    selectCollector.on('end', () => {
         // Optionally disable components after timeout
     });
 }
