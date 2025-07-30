@@ -1,6 +1,7 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const logger = require('../utils/logger');
 const { EmbedTemplates, Colors } = require('../utils/EmbedTemplates');
+const inviteTracker = require('../utils/InviteTracker');
 
 // Debounce map to prevent duplicate welcome messages
 const welcomeDebounce = new Map();
@@ -51,10 +52,42 @@ module.exports = {
                     welcomeDebounce.delete(key);
                 }
             }
-            
+
+            // Track invite usage (this will also log to invite tracking channel)
+            const inviteInfo = await inviteTracker.trackMemberJoin(member);
+
             // Get welcome channel ID from environment variables
             const welcomeChannelId = process.env.WELCOME_CHANNEL_ID;
-            
+            const autoRoleId = process.env.AUTO_ROLE_ID;
+
+            // Assign auto role if configured
+            if (autoRoleId) {
+                try {
+                    const autoRole = member.guild.roles.cache.get(autoRoleId);
+                    if (autoRole) {
+                        await member.roles.add(autoRole);
+                        logger.info(`Auto role assigned to ${member.user.tag}`, {
+                            category: 'autorole',
+                            user: member.user.id,
+                            guild: member.guild.id,
+                            role: autoRole.name
+                        });
+                    } else {
+                        logger.warn(`Auto role not found: ${autoRoleId}`, {
+                            category: 'autorole',
+                            guild: member.guild.id
+                        });
+                    }
+                } catch (roleError) {
+                    logger.logError(roleError, {
+                        category: 'autorole',
+                        context: 'Failed to assign auto role to new member',
+                        user: member.user.id,
+                        guild: member.guild.id
+                    });
+                }
+            }
+
             if (!welcomeChannelId) {
                 logger.warn('WELCOME_CHANNEL_ID not set in environment variables', {
                     category: 'welcome',

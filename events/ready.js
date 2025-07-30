@@ -2,6 +2,8 @@ const { Events, ActivityType } = require('discord.js');
 const logger = require('../utils/logger');
 const XPManager = require('../utils/XPManager');
 const DailyRoleScheduler = require('../utils/DailyRoleScheduler');
+const AIScheduler = require('../utils/AIScheduler');
+const inviteTracker = require('../utils/InviteTracker');
 
 module.exports = {
     name: Events.ClientReady,
@@ -82,6 +84,35 @@ module.exports = {
             logger.logError(error, {
                 category: 'startup',
                 context: 'Failed to initialize daily role scheduler'
+            });
+        }
+        
+        // Initialize AI scheduler for conversation cleanup
+        try {
+            AIScheduler.start();
+            logger.info('AI maintenance scheduler initialized', {
+                category: 'startup'
+            });
+        } catch (error) {
+            logger.logError(error, {
+                category: 'startup',
+                context: 'Failed to initialize AI scheduler'
+            });
+        }
+
+        // Initialize invite tracking for all guilds
+        try {
+            for (const guild of client.guilds.cache.values()) {
+                await inviteTracker.initializeGuild(guild);
+            }
+            logger.info('Invite tracking initialized for all guilds', {
+                category: 'startup',
+                guilds: client.guilds.cache.size
+            });
+        } catch (error) {
+            logger.logError(error, {
+                category: 'startup',
+                context: 'Failed to initialize invite tracking'
             });
         }
         
