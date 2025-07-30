@@ -91,7 +91,7 @@ ONE sentence. Direct. No colons. No extra text.`;
             const sanitizedMessage = userMessage.trim().substring(0, 2000); // Discord limit
             const sanitizedUserName = userName ? userName.substring(0, 32) : 'User'; // Reasonable username limit
 
-            // Check rate limiting (max 10 messages per user per 5 minutes)
+            // Check rate limiting (max 20 messages per user per 5 minutes)
             if (this.isRateLimited(userId)) {
                 return {
                     success: false,
@@ -378,7 +378,7 @@ ONE sentence. Direct. No colons. No extra text.`;
             this.rateLimits.set(userId, userLimits);
         }
         
-        return userLimits.count >= 10; // Max 10 messages per 5 minutes
+        return userLimits.count >= 20; // Max 20 messages per 5 minutes
     }
 
     updateRateLimit(userId) {

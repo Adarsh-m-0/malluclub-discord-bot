@@ -280,7 +280,7 @@ async function handleSetup(interaction) {
 **🚫 Please Note:**
 • Be respectful and follow server rules
 • I can't provide medical, legal, or financial advice
-• Rate limited to 10 messages per 5 minutes per user
+• Rate limited to 20 messages per 5 minutes per user
 • Conversation is shared among all users in this channel
 
 Let's have a great conversation! Welcome to the MalluClub family! 🎉`)

@@ -1,4 +1,4 @@
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, AuditLogEvent } = require('discord.js');
 const logger = require('./logger');
 
 class InviteTracker {
@@ -40,14 +40,41 @@ class InviteTracker {
         }
     }
 
-    // Update invite cache when a new invite is created
+    // Update invite cache when a new invite is created (enhanced with audit log verification)
     async onInviteCreate(invite) {
         try {
             const guildInvites = this.inviteCache.get(invite.guild.id) || new Map();
             
+            // Get inviter info from invite object or audit logs
+            let actualInviter = invite.inviter;
+            
+            if (!actualInviter) {
+                try {
+                    const auditLogs = await invite.guild.fetchAuditLogs({
+                        type: AuditLogEvent.InviteCreate,
+                        limit: 5
+                    });
+
+                    const matchingEntry = auditLogs.entries.find(entry => 
+                        Math.abs(entry.createdTimestamp - invite.createdTimestamp) < 5000 && // Within 5 seconds
+                        entry.target?.code === invite.code
+                    );
+
+                    if (matchingEntry) {
+                        actualInviter = matchingEntry.executor;
+                    }
+                } catch (auditError) {
+                    logger.warn('Could not fetch audit logs for invite creation', {
+                        category: 'invite-tracking',
+                        guild: invite.guild.id,
+                        inviteCode: invite.code
+                    });
+                }
+            }
+            
             guildInvites.set(invite.code, {
                 uses: invite.uses,
-                inviter: invite.inviter,
+                inviter: actualInviter,
                 createdAt: invite.createdAt,
                 maxUses: invite.maxUses,
                 temporary: invite.temporary,
@@ -57,7 +84,7 @@ class InviteTracker {
             
             this.inviteCache.set(invite.guild.id, guildInvites);
 
-            // Log invite creation
+            // Log invite creation with enhanced information
             const logChannelId = process.env.INVITE_LOG_CHANNEL_ID;
             if (logChannelId) {
                 const logChannel = invite.guild.channels.cache.get(logChannelId);
@@ -65,16 +92,17 @@ class InviteTracker {
                     const embed = new EmbedBuilder()
                         .setColor('#00FF00')
                         .setTitle('📨 Invite Created')
-                        .setDescription(`**Code:** \`${invite.code}\``)
+                        .setDescription(`**Code:** \`${invite.code}\`\n**URL:** https://discord.gg/${invite.code}`)
                         .addFields(
-                            { name: '👤 Created by', value: invite.inviter ? `${invite.inviter} (${invite.inviter.tag})` : 'Unknown', inline: true },
+                            { name: '👤 Created By', value: actualInviter ? `${actualInviter} (${actualInviter.tag})` : '❓ Unknown', inline: true },
                             { name: '📍 Channel', value: `${invite.channel}`, inline: true },
-                            { name: '🔢 Max Uses', value: invite.maxUses ? invite.maxUses.toString() : 'Unlimited', inline: true },
-                            { name: '⏰ Expires', value: invite.maxAge ? `<t:${Math.floor((Date.now() + invite.maxAge * 1000) / 1000)}:R>` : 'Never', inline: true },
-                            { name: '🚪 Temporary', value: invite.temporary ? 'Yes' : 'No', inline: true }
+                            { name: '🔢 Max Uses', value: invite.maxUses ? invite.maxUses.toString() : '∞ Unlimited', inline: true },
+                            { name: '⏰ Expires', value: invite.maxAge ? `<t:${Math.floor((Date.now() + invite.maxAge * 1000) / 1000)}:R>` : '❌ Never', inline: true },
+                            { name: '🚪 Temporary', value: invite.temporary ? '✅ Yes' : '❌ No', inline: true },
+                            { name: '📊 Current Uses', value: '0', inline: true }
                         )
                         .setTimestamp()
-                        .setFooter({ text: 'Invite Tracking' });
+                        .setFooter({ text: 'Invite Creation • Tracking System' });
 
                     await logChannel.send({ embeds: [embed] });
                 }
@@ -83,14 +111,19 @@ class InviteTracker {
             logger.info(`Invite created: ${invite.code}`, {
                 category: 'invite-tracking',
                 guild: invite.guild.id,
-                inviter: invite.inviter?.id,
-                channel: invite.channel.id
+                inviter: actualInviter?.id || 'unknown',
+                inviterTag: actualInviter?.tag || 'unknown',
+                channel: invite.channel.id,
+                channelName: invite.channel.name,
+                maxUses: invite.maxUses,
+                temporary: invite.temporary
             });
         } catch (error) {
             logger.logError(error, {
                 category: 'invite-tracking',
                 context: 'Failed to handle invite creation',
-                guild: invite.guild.id
+                guild: invite.guild.id,
+                inviteCode: invite.code
             });
         }
     }
@@ -139,7 +172,7 @@ class InviteTracker {
         }
     }
 
-    // Find which invite was used when a member joins
+    // Find which invite was used when a member joins (enhanced with audit log support)
     async trackMemberJoin(member) {
         try {
             const currentInvites = await member.guild.invites.fetch();
@@ -147,8 +180,9 @@ class InviteTracker {
             
             let usedInvite = null;
             let inviterInfo = null;
+            let auditLogInviter = null;
 
-            // Compare current invites with cached invites to find the one with increased uses
+            // Method 1: Compare current invites with cached invites
             for (const [code, currentInvite] of currentInvites) {
                 const cachedInvite = cachedInvites.get(code);
                 
@@ -156,6 +190,81 @@ class InviteTracker {
                     usedInvite = currentInvite;
                     inviterInfo = cachedInvite.inviter;
                     break;
+                }
+            }
+
+            // Method 2: If no invite found through cache comparison, check audit logs
+            if (!usedInvite) {
+                try {
+                    const auditLogs = await member.guild.fetchAuditLogs({
+                        type: AuditLogEvent.InviteCreate,
+                        limit: 10
+                    });
+
+                    // Look for recent invite creations that might be related
+                    const recentInviteCreations = auditLogs.entries.filter(entry => 
+                        Date.now() - entry.createdTimestamp < 60000 // Within last minute
+                    );
+
+                    if (recentInviteCreations.size > 0) {
+                        const mostRecentInvite = recentInviteCreations.first();
+                        auditLogInviter = mostRecentInvite.executor;
+                        
+                        // Try to find this invite in current invites
+                        const matchingInvite = currentInvites.find(invite => 
+                            invite.inviter?.id === mostRecentInvite.executor?.id &&
+                            Math.abs(invite.createdTimestamp - mostRecentInvite.createdTimestamp) < 10000
+                        );
+
+                        if (matchingInvite) {
+                            usedInvite = matchingInvite;
+                            inviterInfo = auditLogInviter;
+                        }
+                    }
+                } catch (auditError) {
+                    logger.warn('Could not fetch audit logs for invite tracking', {
+                        category: 'invite-tracking',
+                        guild: member.guild.id,
+                        error: auditError.message
+                    });
+                }
+            }
+
+            // Method 3: Check for vanity URL usage via audit logs
+            if (!usedInvite) {
+                try {
+                    const memberAuditLogs = await member.guild.fetchAuditLogs({
+                        type: AuditLogEvent.MemberJoin,
+                        limit: 5
+                    });
+
+                    const memberJoinEntry = memberAuditLogs.entries.find(entry => 
+                        entry.target?.id === member.id &&
+                        Math.abs(Date.now() - entry.createdTimestamp) < 10000 // Within 10 seconds
+                    );
+
+                    if (memberJoinEntry && memberJoinEntry.changes) {
+                        // Check if it was through vanity URL or other special invite
+                        const inviteCodeChange = memberJoinEntry.changes.find(change => 
+                            change.key === 'invite_code' || change.key === 'vanity_url_code'
+                        );
+
+                        if (inviteCodeChange) {
+                            // This was likely a vanity URL join
+                            usedInvite = { 
+                                code: inviteCodeChange.new || 'vanity', 
+                                uses: 'N/A',
+                                channel: { name: 'Vanity URL' },
+                                inviter: null
+                            };
+                        }
+                    }
+                } catch (memberAuditError) {
+                    logger.warn('Could not fetch member join audit logs', {
+                        category: 'invite-tracking',
+                        guild: member.guild.id,
+                        error: memberAuditError.message
+                    });
                 }
             }
 
@@ -186,27 +295,35 @@ class InviteTracker {
                         .addFields(
                             { name: '👤 Member', value: `${member.user} (${member.user.tag})`, inline: false },
                             { name: '🆔 User ID', value: member.user.id, inline: true },
-                            { name: '📅 Account Created', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true }
+                            { name: '📅 Account Created', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
+                            { name: '⏰ Joined At', value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:f>`, inline: true }
                         )
                         .setTimestamp()
-                        .setFooter({ text: 'Invite Tracking' });
+                        .setFooter({ text: 'Invite Tracking System' });
 
-                    if (usedInvite && inviterInfo) {
+                    if (usedInvite && (inviterInfo || auditLogInviter)) {
+                        const finalInviter = inviterInfo || auditLogInviter;
+                        embed.setColor('#00FF00'); // Green for successful tracking
                         embed.addFields(
-                            { name: '📨 Invite Used', value: `\`${usedInvite.code}\``, inline: true },
-                            { name: '👤 Invited by', value: `${inviterInfo} (${inviterInfo.tag})`, inline: true },
-                            { name: '🔢 Total Uses', value: usedInvite.uses.toString(), inline: true },
-                            { name: '📍 Invite Channel', value: `${usedInvite.channel}`, inline: true }
+                            { name: '📨 Invite Code', value: `\`${usedInvite.code}\``, inline: true },
+                            { name: '👤 Invited By', value: finalInviter ? `${finalInviter} (${finalInviter.tag})` : 'Unknown', inline: true },
+                            { name: '🔢 Total Uses', value: usedInvite.uses?.toString() || 'N/A', inline: true }
                         );
+
+                        if (usedInvite.channel && usedInvite.channel.name !== 'Vanity URL') {
+                            embed.addFields({ name: '📍 Invite Channel', value: `${usedInvite.channel}`, inline: true });
+                        }
 
                         // Add temporary member info if applicable
                         if (usedInvite.temporary) {
-                            embed.addFields({ name: '⚠️ Temporary Member', value: 'This member will be kicked when they leave voice/stage channels', inline: false });
+                            embed.addFields({ name: '⚠️ Temporary Member', value: 'Will be kicked when leaving voice/stage channels', inline: false });
                         }
                     } else {
+                        embed.setColor('#FFA500'); // Orange for unknown invite
                         embed.addFields(
-                            { name: '📨 Invite Used', value: 'Unknown/Vanity URL', inline: true },
-                            { name: '👤 Invited by', value: 'Unknown', inline: true }
+                            { name: '📨 Invite Used', value: '❓ Unknown/Untracked', inline: true },
+                            { name: '👤 Invited By', value: '❓ Unknown', inline: true },
+                            { name: '⚠️ Note', value: 'Could not determine invite source', inline: false }
                         );
                     }
 
@@ -219,13 +336,14 @@ class InviteTracker {
                 user: member.user.id,
                 guild: member.guild.id,
                 inviteCode: usedInvite?.code || 'unknown',
-                inviter: inviterInfo?.id || 'unknown',
-                totalUses: usedInvite?.uses || 0
+                inviter: (inviterInfo || auditLogInviter)?.id || 'unknown',
+                totalUses: usedInvite?.uses || 0,
+                trackingMethod: usedInvite ? (inviterInfo ? 'cache' : 'audit-log') : 'unknown'
             });
 
             return {
                 usedInvite,
-                inviterInfo,
+                inviterInfo: inviterInfo || auditLogInviter,
                 member
             };
 
